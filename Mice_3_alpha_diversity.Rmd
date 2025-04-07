@@ -1,0 +1,518 @@
+---
+title: "PRIMA06 Alpha diversity"
+author: "apih"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: false
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA06_", Sys.Date(), "_test_variables.html"))
+        })
+---
+
+# INFO {.tabset .tabset-fade .tabset-pills}
+
+This Rmarkdown contains the commands necessary to perform alpha diversity analysis of the output from the [DF_GMH_PIPELINE](https://github.com/MSMortensen/DF_GMH_pipeline).
+
+Alpha diversity, also called "within sample diversity" is calculated for each sample individually and is independent of all other samples. Alpha diversity is sensitive to sequencing depth, so rarefaction must be done first.
+Here we calculate index:
+ -    Observed richness (observed species)
+ -    Shannon diversity index
+
+# SETUP
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(GMHmicrobiome)
+library(ggpubr)
+library(kableExtra)
+library(phyloseq)
+library(rstatix)
+library(vegan)
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# DATA
+## Load
+```{r load, eval=TRUE}
+
+# Load phyloseq metadata
+load("R_objects/Phyloseq_harsh.Rdata")
+
+# Extract sample data from phyloseq object
+dat <- as_tibble(sample_data(phy))
+
+
+```
+
+
+## Clean
+```{r clean, eval=TRUE}
+
+# Remove
+out.var <- c("type","is.neg", "Sample","ASVs","Seq_run", "Project","DNAconc_02", "BacLoad_Log", "reads", "depth")
+
+dat <- dat %>% select(-one_of(out.var))
+
+# For ordered factors I suggest to do them individually
+dat <- dat %>% mutate(Day = factor(Day, levels = c("D02","D05","D09"),ordered = TRUE))
+dat <- dat %>% mutate(Group = factor(Group, levels = c("Control","Low","Medium", "High"),ordered = TRUE))
+dat <- dat %>% mutate_at("Animal", factor)
+
+# Look at cleaned data
+skimr::skim(dat)
+
+```
+
+## Save
+The cleaned data is here saved in one file that can be loaded when necessary in this template. 
+```{r save, eval=TRUE}
+
+# Save cleaned data
+save(dat, file = "R_objects/alpha_data.RData")
+
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# OBSERVED ALPHA DIVERSITY 
+## All groups and days 
+```{r prepare_observed_a, eval=TRUE}
+# load data 
+load("R_objects/alpha_data.RData")
+
+# Set names of variables
+PREDICTOR <- "Group"
+OUTCOME <- "Observed"
+TIME <- "Day"
+SUBJECT <- "Animal"
+
+dat.clean <- dat
+
+# Order data
+dat.clean <- arrange(dat.clean, !!sym(SUBJECT))
+  
+# Remove unpaired samples
+dat.clean <- dat.clean %>% 
+  group_by(!!sym(SUBJECT)) %>%
+  filter(n() == 3) %>%
+  arrange(!!sym(TIME), !!sym(SUBJECT)) %>%
+  droplevels() %>% 
+  ungroup()
+
+dat.clean.con <- dat.clean[dat.clean$Group %in% c('Control'),] 
+dat.clean.low <- dat.clean[dat.clean$Group %in% c('Low'),] 
+dat.clean.med <- dat.clean[dat.clean$Group %in% c('Medium'),] 
+dat.clean.high <- dat.clean[dat.clean$Group %in% c('High'),]  
+
+```
+
+#### Visualize and summarize
+```{r visualize_observed_a}
+
+# Summary samples in groups
+dat.clean %>% 
+  group_by(!!sym(TIME),!!sym(PREDICTOR)) %>% 
+  get_summary_stats(!!sym(OUTCOME), type = "common")
+
+
+# Create plots
+# Set colors 
+my_cols_con <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low <- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_med <- c("darkseagreen2", "#66CC66", "#339933", "#006600")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+# Visualise data 
+plot_con <- dat.clean.con %>%
+  ggboxplot(x = "Day",
+           y = "Observed",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#ff6666") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(200, 350), breaks = scales::pretty_breaks(n=10))+
+  ylab("OTUs")+
+  theme_classic()+
+  ggtitle("Control")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_con)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat.clean.low %>%
+  ggboxplot(x = "Day",
+           y = "Observed",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#3366CC") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(200, 350), breaks = scales::pretty_breaks(n=10))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_med <- dat.clean.med %>%
+  ggboxplot(x = "Day",
+           y = "Observed",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#66CC66") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(200, 350), breaks = scales::pretty_breaks(n=10))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Medium dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_med)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat.clean.high %>%
+  ggboxplot(x = "Day",
+           y = "Observed",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#c994c7") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(200, 350), breaks = scales::pretty_breaks(n=10))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+
+```
+
+
+#### Check normality and homogneity of variance assumptions
+
+QQ plot and Shapiro-Wilk test of normality are used to analyze the model residuals.
+The homogeneity of variance assumption of the between-subject factor can be checked using the Levene's test. The test is performed at each level of within-subject variable.
+
+```{r assumptions_observed_a}
+
+# Create a QQ plot of residuals
+dat.clean %>%
+  ggqqplot(OUTCOME) + facet_grid(as.formula(paste(TIME,PREDICTOR,sep = " ~ ")))
+
+# Compute Shapiro-Wilk test of normality
+dat.clean %>%
+  group_by(!!sym(TIME), !!sym(PREDICTOR)) %>%
+  shapiro_test(!!sym(OUTCOME))
+
+# Levene's test
+dat.clean %>%
+  group_by(!!sym(TIME)) %>%
+  levene_test(as.formula(paste(OUTCOME,PREDICTOR,sep = " ~ ")))
+
+```
+
+
+#### Statistical tests 
+```{r stat_tests_observed_a}
+# ANOVA
+res.aov <- anova_test(data = dat.clean, 
+                      dv = !!sym(OUTCOME), 
+                      wid = !!sym(SUBJECT), 
+                      between = !!sym(PREDICTOR),
+                      within = !!sym(TIME))
+get_anova_table(res.aov)
+
+
+# Post hoc
+stat.test.con <- dat.clean.con %>% 
+  t_test(Observed~Day, paired = TRUE, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.low <- dat.clean.low %>% 
+  t_test(Observed~Day, paired = TRUE, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.med <- dat.clean.med %>% 
+  t_test(Observed~Day, paired = TRUE, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.high <- dat.clean.high %>% 
+  t_test(Observed~Day, paired = TRUE, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+```
+
+
+#### Report
+```{r report_observed_a}
+# Visualization: boxplots with p-values
+My_Theme = theme(plot.title = element_text(size = 10)) # For setting the text sizes in the plot 
+
+plot_con_final <- plot_con + My_Theme + 
+  stat_pvalue_manual(stat.test.con, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE)
+
+plot_low_final <- plot_low + My_Theme + 
+  stat_pvalue_manual(stat.test.low, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_med_final <- plot_med + My_Theme + 
+  stat_pvalue_manual(stat.test.med, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_high_final <- plot_high + My_Theme +  
+  stat_pvalue_manual(stat.test.high, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_final <- ggarrange(plot_con_final, plot_low_final, plot_med_final, plot_high_final, ncol=4, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Observed OTUs", color = "black", face = "bold"))
+
+filename <- paste0("plots/Alpha_diversity/Observed.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+
+```
+
+
+# SHANNON DIVERSITY - ALL GROUPS AND DAYS 
+```{r prepare_shannon, eval=TRUE}
+# load data 
+load("R_objects/alpha_data.RData")
+
+# Set names of variables
+PREDICTOR <- "Group"
+OUTCOME <- "Shannon"
+TIME <- "Day"
+SUBJECT <- "Animal"
+
+dat.clean <- dat
+
+# Create formula
+PREDICTOR.F <- paste(PREDICTOR,TIME, sep= "*")
+FORMULA <- as.formula(paste(OUTCOME,PREDICTOR.F, sep = " ~ "))
+
+# Remove unpaired samples
+dat.clean <- dat.clean %>% 
+  group_by(!!sym(SUBJECT)) %>%
+  filter(n() == 3) %>%
+  arrange(!!sym(TIME), !!sym(SUBJECT)) %>%
+  droplevels() %>% 
+  ungroup()
+
+# Summary samples in groups
+dat.clean %>% group_by(!!sym(TIME),!!sym(PREDICTOR)) %>% get_summary_stats(!!sym(OUTCOME), type = "mean_sd")
+
+dat.clean.con <- dat.clean[dat.clean$Group %in% c('Control'),] 
+dat.clean.low <- dat.clean[dat.clean$Group %in% c('Low'),] 
+dat.clean.med <- dat.clean[dat.clean$Group %in% c('Medium'),] 
+dat.clean.high <- dat.clean[dat.clean$Group %in% c('High'),]  
+
+```
+
+#### Visualize and summarize
+```{r visualize_shannon}
+# Summary samples in groups
+dat.clean %>% 
+  group_by(!!sym(TIME),!!sym(PREDICTOR)) %>% 
+  get_summary_stats(!!sym(OUTCOME), type = "common")
+
+
+# Create plots
+# Set colors 
+my_cols_con <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low <- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_med <- c("darkseagreen2", "#66CC66", "#339933", "#006600")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+# Visualise data 
+plot_con <- dat.clean.con %>%
+  ggboxplot(x = "Day",
+           y = "Shannon",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#ff6666") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(2, 5), breaks = scales::pretty_breaks(n=4))+
+  ylab("Shannon index")+
+  theme_classic()+
+  ggtitle("Control")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_con)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat.clean.low %>%
+  ggboxplot(x = "Day",
+           y = "Shannon",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#3366CC") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(2, 5), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_med <- dat.clean.med %>%
+  ggboxplot(x = "Day",
+           y = "Shannon",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#66CC66") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(2, 5), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Medium dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_med)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat.clean.high %>%
+  ggboxplot(x = "Day",
+           y = "Shannon",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#c994c7") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(2, 5), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+#### Check normality and homogneity of variance assumptions
+
+QQ plot and Shapiro-Wilk test of normality are used to analyze the model residuals.
+The homogeneity of variance assumption of the between-subject factor can be checked using the Levene's test. The test is performed at each level of within-subject variable.
+
+```{r assumptions_shannon}
+# Create a QQ plot of residuals
+dat.clean %>%
+  ggqqplot(OUTCOME) + facet_grid(as.formula(paste(TIME,PREDICTOR,sep = " ~ ")))
+
+# Compute Shapiro-Wilk test of normality
+dat.clean %>%
+  group_by(!!sym(TIME), !!sym(PREDICTOR)) %>%
+  shapiro_test(!!sym(OUTCOME))
+
+# Levene's test
+dat.clean %>%
+  group_by(!!sym(TIME)) %>%
+  levene_test(as.formula(paste(OUTCOME,PREDICTOR,sep = " ~ ")))
+
+```
+
+
+#### Statistical tests 
+
+```{r stat_shannon}
+# Friedman for paired data 
+f <- friedman.test(Shannon ~ Day|Animal, data = dat.clean)
+
+```
+
+## REPORT
+
+```{r report_shannon}
+# Visualization: boxplots with p-values
+
+My_Theme = theme(plot.title = element_text(size = 10)) # For setting the text sizes in the plot 
+
+plot_con_final <- plot_con + My_Theme 
+
+plot_low_final <- plot_low + My_Theme  
+
+plot_med_final <- plot_med + My_Theme  
+
+plot_high_final <- plot_high + My_Theme 
+
+plot_final <- ggarrange(plot_con_final, plot_low_final, plot_med_final, plot_high_final, ncol=4, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Shannon", color = "black", face = "bold"))
+
+filename <- paste0("plots/Alpha_diversity/shannon.png")
+plot_final 
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# INFO {.tabset .tabset-fade .tabset-pills}
+
+## FINAL COMMENT
+
+This completes the statistical analysis of alpha diversity 
+
+
+
+## SESSION INFO
+
+The analysis was run in the following environment:
+
+```{r packages, eval=TRUE}
+sessionInfo()
+```

@@ -1,0 +1,534 @@
+---
+title: "In vitro Beta Diversity T72"
+author: "apih"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: false
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA06_", Sys.Date(), "_beta_diversity_groups.html"))
+        })
+params:
+    input: "R_objects/Phyloseq_harsh_invitro.Rdata"
+    group_var: "Treatment"
+    subject_var: "Tube"
+    time_var: "Time_point"
+---
+
+# INFO
+
+This template is build to use the output from **GMH_import** as input. It will take you through a basic beta diversity analysis for the project. Beta diversity is the difference between samples, this means that we compare samples as a whole. The analysis generally consists of three steps:
+
+1.  Calculation of distance/dissimilarity between samples.
+
+2.  Visualization of the data (ordination).
+
+3.  Statistical analysis (PERMANOVA).
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(GMHmicrobiome)
+library(ggpubr)
+library(kableExtra)
+library(phyloseq)
+library(cowplot)
+library(ggExtra)
+library(vegan)
+library(ecole)
+
+
+# save parameters
+saveRDS(params, "R_objects/params_betadiv_invitro.RDS")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# CALCULATE DISTANCES
+
+## PREPARE DATA
+
+First step is to create a clean phyloseq object (remove samples missing relevant data and/or subset by a relevant variable).
+
+Beta diversity are affected by all samples included, so if some samples are removed, this should preferably be done before the beta diversity is calculated. \> qualitative metrics are sensitive to sequencing depth, so rarefaction should be done for those metrics as well.
+
+```{r prepare-data, eval=FALSE, echo=TRUE}
+
+# Load data
+params <- readRDS("R_objects/params_betadiv_invitro.RDS")
+load(params$input)
+
+# Create subset
+phy.clean <- subset_samples(phy, Time_point == "T72")
+phy.clean <- subset_samples(phy.clean, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Clean data
+phy.clean <- prune_samples(sample_names(phy.clean)[!is.na(sample_data(phy.clean)[,params$group_var])], phy.clean)
+
+# Remove empty taxa
+phy.clean <- prune_taxa(taxa_sums(phy.clean) > 0, phy.clean)
+
+# Recalculate midpoint root
+phy_tree(phy.clean) <- phangorn::midpoint(phy_tree(phy.clean))
+
+# Perform multiple rarefactions
+phy.rare <- multiple_rarefy(phy.clean)
+
+# Remove empty taxa
+phy.rare <- prune_taxa(taxa_sums(phy.rare) > 0, phy.rare)
+
+# Recalculate midpoint root
+phy_tree(phy.rare) <- phangorn::midpoint(phy_tree(phy.rare))
+
+# Save object
+save(phy.rare, phy.clean, file = "R_objects/Phyloseq_betadiv_T72.Rdata")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE)) #will clear all objects includes hidden objects.
+invisible(gc()) #free up memory and report the memory usage.
+```
+
+## CALCULATE
+
+### AITCHISON
+
+Aitchison distance (1986) and robust Aitchison distance [(Martino et al. 2019)](https://journals.asm.org/doi/10.1128/mSystems.00016-19) are metrics that deal with compositional data. The Aitchison distance is a dissimilarity measure calculated as the Euclidean distance between observations (samples) after performing a centered log ratio (“clr”) transformation. Aitchison distance has been said to outperform Jensen-Shannon divergence and Bray-Curtis dissimilarity, due to a better stability to subsetting and aggregation, and it being a proper distance (Aitchison et al., 2000).
+
+```{r calc-ait, eval=FALSE, echo=TRUE}
+
+# load
+params <- readRDS("R_objects/params_betadiv_invitro.RDS")
+load("R_objects/Phyloseq_betadiv_T72.Rdata")
+
+# Calculate Bray-Curtis dissimilarities
+ait.dist <- vegan::vegdist(otu_table(phy.clean), method = "robust.aitchison")
+
+# Calculate PCoA data
+ait.pcoa <- ordinate(phy.clean, method = "PCoA",distance = ait.dist)
+ait.nmds <- metaMDS(ait.dist, k = 5, trymax = 1000)
+
+# Save distance objects
+save(ait.dist, ait.nmds, ait.pcoa, phy.clean, file = "R_objects/bdiv_ait_T72.RData")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+### JACCARD
+
+The Jaccard similarity measures the similarity between two sets of data to see which members are shared and distinct. The Jaccard similarity is calculated by dividing the number of observations in both sets by the number of observations in either set. In other words, the Jaccard similarity can be computed as the size of the intersection divided by the size of the union of two sets. This can be written in set notation using intersection $(A \cap B)$ and unions $(A \cup B)$ of two sets: $$J(A,B) = \frac{|A \cap B|}{|A \cup B|}$$ where $|A \cap B|$ gives the number of members shared between both sets and $|A \cup B|$ gives the total number of members in both sets (shared and un-shared). The Jaccard Similarity will be 0 if the two sets don't share any values and 1 if the two sets are identical.
+
+Additionally, this function can be used to find the dissimilarity between two sets by calculating:
+$$d(A,B) = 1 - J(A,B)$$
+> We will be calculating binary Jaccard dissimilarity
+
+```{r calc-jac, eval=FALSE, echo=TRUE}
+
+# load
+params <- readRDS("R_objects/params_betadiv_invitro.RDS")
+load("R_objects/Phyloseq_betadiv_T72.Rdata")
+
+# Calculate Jaccard binary dissimilarities
+jac.dist <- distance(phy.rare, method = "jaccard", binary = TRUE)
+
+# Calculate PCoA data
+jac.pcoa <- ordinate(phy.rare, method = "PCoA",distance = jac.dist)
+jac.nmds <- metaMDS(jac.dist, k = 5, trymax = 1000)
+
+# Save distance objects
+save(jac.dist, jac.nmds, jac.pcoa, phy.rare, file = "R_objects/bdiv_jac_T72.RData")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# Analysis 1: Aitchison 
+
+## VISUALIZATION
+
+### LOAD DATA
+
+```{r load-betadiv-a, eval=TRUE, echo=TRUE}
+
+params <- readRDS("R_objects/params_betadiv_invitro.RDS")
+
+# Choose metric
+METRIC <- "ait"
+
+# Choose variable 
+VAR <- "Treatment"
+
+# Load data
+load(params$input)
+
+if (METRIC == "jac") {
+  load("R_objects/bdiv_jac_T72.RData")
+  dist.used <- jac.dist
+  nmds.used <- jac.nmds
+  pcoa.used <- jac.pcoa
+  phy.used <- phy.rare
+  rm(jac.dist, jac.nmds, jac.pcoa, phy.rare)
+} else if (METRIC == "ait"){
+  load("R_objects/bdiv_ait_T72.RData")
+  dist.used <- ait.dist
+  nmds.used <- ait.nmds
+  pcoa.used <- ait.pcoa
+  phy.used <- phy.clean
+  rm(ait.dist, ait.nmds, ait.pcoa, phy.clean)
+}
+
+# Extract metadata from phyloseq
+mdat <- data.frame(sample_data(phy.used))
+
+# If a variable consist of numbers, but represent distinct groups remember to make it into a factor
+mdat[,VAR] <- as.factor(mdat[,VAR])
+```
+
+### CLEAN ORDINATION {.tabset .tabset-fade .tabset-pills}
+
+#### EIGENVALUES
+
+```{r plot-eigenvalues-a, eval=TRUE, echo=TRUE}
+
+# Extract eigen values
+eigen <- pcoa.used$values
+eigen$Axis <- as.numeric(row.names(eigen))
+
+head(eigen)
+
+# Create plots for both distance indeces
+p.eigen <- ggplot(eigen[1:10,], aes(x = as.factor(Axis), y = 100*Relative_eig)) + 
+  geom_col(aes(fill = as.factor(Axis))) +
+  geom_point(aes(x = Axis, y = 100*Cumul_eig)) +
+  geom_line(aes(x = Axis, y = 100*Cumul_eig)) +
+  ylab("Variance explained (%)") +
+  xlab("Axis") +
+  theme_pubr(legend = "none") + ggsci::scale_fill_jco()
+p.eigen 
+
+```
+
+#### PLOT
+
+```{r ordination-find-axis-a, eval=TRUE}
+
+# Create plots of eigenvalues for PCoA plots
+pcoa.tab <- plot_ordination(phy, pcoa.used,axes = 1:5,justDF = TRUE)
+nmds.tab <- plot_ordination(phy, nmds.used,axes = 1:5,justDF = TRUE)
+
+# Reformat tables to create one common table
+colnames(nmds.tab)[1:5] <- c("Axis.1","Axis.2","Axis.3","Axis.4","Axis.5")
+
+nmds.tab$ordination <- "nmds"
+pcoa.tab$ordination <- "pcoa"
+
+ord.tab <- rbind(nmds.tab,pcoa.tab)
+ord.tab[,VAR] <- as.factor(ord.tab[,VAR])
+
+# Melt axis to be in one variable
+axis.tab <- pivot_longer(data = ord.tab, cols = c("Axis.1","Axis.2","Axis.3","Axis.4","Axis.5"), names_to = "Axis", values_to = "position")
+
+# Plot positions on axes
+ggplot(axis.tab, aes_string(x = "ordination", y = "position", fill = VAR)) +
+  geom_boxplot() +
+  facet_grid(Axis~.) +
+  coord_flip() + 
+  theme_pubr(legend = "bottom") + ggsci::scale_fill_jco()
+
+```
+
+
+```{r plot-ordination-a, eval=TRUE}
+
+#Sort group variable
+str(ord.tab$Treatment)
+ord.tab$Treatment <- factor(ord.tab$Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"), ordered = TRUE)
+
+my_cols <- c("#CC3333","#0066CC", "#88419d")
+
+# Create PCoA plot 
+plot.pcoa1 <- ggplot(ord.tab[ord.tab$ordination == "pcoa",], aes_string(x = "Axis.1", y = "Axis.2", color = VAR, group = VAR)) +
+  geom_point() + 
+  labs(color=VAR) +
+  theme_pubr(legend = "bottom")+
+  stat_ellipse(aes_string(x = "Axis.1", y = "Axis.2", color = VAR, fill = VAR),geom = "polygon", alpha = 0.1, level = 0.9) +
+  scale_color_manual(values = my_cols)+
+  scale_fill_manual(values = my_cols)+
+  border(color = "black",size = 0.5) +
+  labs(caption = "PCoA")+
+  #xlab("Axis 1 (12%)")+
+  #ylab("Axis 2 (10%)")+ 
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.title.x = element_text(size=11),
+    axis.text.y = element_text(size=10),
+    axis.title.y = element_text(size = 11), 
+    legend.text = element_text(size = 10), 
+    legend.title = element_blank())
+
+
+# Add marginal box plot 
+plot.pcoa.box <- ggExtra::ggMarginal(p = plot.pcoa1, type = 'boxplot', size = 10, groupFill = TRUE)
+
+plot.pcoa.box <- annotate_figure(
+  plot.pcoa.box,
+  top = text_grob("Aitchison distance 72h (ASVs)", face = "bold", size = 12),
+)
+
+plot.pcoa.box
+
+
+filename <- paste0("plots/In_vitro/aitchison_t72_asv.png")
+plot.pcoa.box
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+```
+
+
+## STATISTICAL ANALYSIS
+
+### PERMANOVA
+
+#### DISPERTION
+
+First we will test the beta diversity dispertion to determine whether any differences in dispertion might cause any PERMANOVA differences.
+
+```{r betadisp-a, eval=TRUE}
+
+# Calculate betadispertion
+bdisp <- betadisper(dist.used, mdat[,VAR])
+
+# Run statical test
+anova(bdisp)
+
+# Run posthoc test if significant and more than two groups
+TukeyHSD(bdisp)
+plot(TukeyHSD(bdisp))
+
+# Plot dispertion
+boxplot(bdisp)
+
+```
+
+#### RUN TEST
+
+```{r permanova-a, eval=TRUE}
+
+# set seeds
+set.seed(9)
+
+# Pairwise test
+permanova_pairwise(x = dist.used, grp = mdat$Treatment, padj = "fdr")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+# Analysis 2: Jaccard  
+
+## VISUALIZATION
+
+### LOAD DATA
+
+```{r load-betadiv-b, eval=TRUE, echo=TRUE}
+
+params <- readRDS("R_objects/params_betadiv_invitro.RDS")
+
+# Choose metric
+METRIC <- "jac"
+
+# Choose variable 
+VAR <- "Treatment"
+
+# Load data
+load(params$input)
+
+if (METRIC == "jac") {
+  load("R_objects/bdiv_jac_T72.RData")
+  dist.used <- jac.dist
+  nmds.used <- jac.nmds
+  pcoa.used <- jac.pcoa
+  phy.used <- phy.rare
+  rm(jac.dist, jac.nmds, jac.pcoa, phy.rare)
+} else if (METRIC == "ait"){
+  load("R_objects/bdiv_ait_T72.RData")
+  dist.used <- ait.dist
+  nmds.used <- ait.nmds
+  pcoa.used <- ait.pcoa
+  phy.used <- phy.clean
+  rm(ait.dist, ait.nmds, ait.pcoa, phy.clean)
+}
+
+# Extract metadata from phyloseq
+mdat <- data.frame(sample_data(phy.used))
+
+# If a variable consist of numbers, but represent distinct groups remember to make it into a factor
+mdat[,VAR] <- as.factor(mdat[,VAR])
+```
+
+### CLEAN ORDINATION {.tabset .tabset-fade .tabset-pills}
+
+#### EIGENVALUES
+
+```{r plot-eigenvalues-b, eval=TRUE, echo=TRUE}
+
+# Extract eigen values
+eigen <- pcoa.used$values
+eigen$Axis <- as.numeric(row.names(eigen))
+
+head(eigen)
+
+# Create plots for both distance indeces
+p.eigen <- ggplot(eigen[1:10,], aes(x = as.factor(Axis), y = 100*Relative_eig)) + 
+  geom_col(aes(fill = as.factor(Axis))) +
+  geom_point(aes(x = Axis, y = 100*Cumul_eig)) +
+  geom_line(aes(x = Axis, y = 100*Cumul_eig)) +
+  ylab("Variance explained (%)") +
+  xlab("Axis") +
+  theme_pubr(legend = "none") + ggsci::scale_fill_jco()
+p.eigen 
+
+```
+
+#### PLOT
+
+```{r ordination-find-axis-b, eval=TRUE}
+# Create plots of eigenvalues for PCoA plots
+pcoa.tab <- plot_ordination(phy, pcoa.used,axes = 1:5,justDF = TRUE)
+nmds.tab <- plot_ordination(phy, nmds.used,axes = 1:5,justDF = TRUE)
+
+# Reformat tables to create one common table
+colnames(nmds.tab)[1:5] <- c("Axis.1","Axis.2","Axis.3","Axis.4","Axis.5")
+
+nmds.tab$ordination <- "nmds"
+pcoa.tab$ordination <- "pcoa"
+
+ord.tab <- rbind(nmds.tab,pcoa.tab)
+ord.tab[,VAR] <- as.factor(ord.tab[,VAR])
+
+# Melt axis to be in one variable
+axis.tab <- pivot_longer(data = ord.tab, cols = c("Axis.1","Axis.2","Axis.3","Axis.4","Axis.5"), names_to = "Axis", values_to = "position")
+
+# Plot positions on axes
+ggplot(axis.tab, aes_string(x = "ordination", y = "position", fill = VAR)) +
+  geom_boxplot() +
+  facet_grid(Axis~.) +
+  coord_flip() + 
+  theme_pubr(legend = "bottom") + ggsci::scale_fill_jco()
+```
+
+
+```{r plot-ordination-b, eval=TRUE}
+
+#Sort group variable
+str(ord.tab$Treatment)
+ord.tab$Treatment <- factor(ord.tab$Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"), ordered = TRUE)
+
+my_cols <- c("#CC3333","#0066CC", "#88419d")
+
+# Create PCoA plot 
+plot.pcoa1 <- ggplot(ord.tab[ord.tab$ordination == "pcoa",], aes_string(x = "Axis.1", y = "Axis.2", color = VAR, group = VAR)) +
+  geom_point() + 
+  labs(color=VAR) +
+  theme_pubr(legend = "bottom")+
+  stat_ellipse(aes_string(x = "Axis.1", y = "Axis.2", color = VAR, fill = VAR),geom = "polygon", alpha = 0.1, level = 0.9) +
+  scale_color_manual(values = my_cols)+
+  scale_fill_manual(values = my_cols)+
+  border(color = "black",size = 0.5) +
+  labs(caption = "PCoA")+
+  #xlab("Axis 1 (14%)")+
+  #ylab("Axis 2 (9%)")+ 
+  theme(
+    axis.text.x = element_text(size = 10),
+    axis.title.x = element_text(size=11),
+    axis.text.y = element_text(size=10),
+    axis.title.y = element_text(size = 11), 
+    legend.text = element_text(size = 10), 
+    legend.title = element_blank())
+  
+# Add marginal box plot 
+plot.pcoa.box <- ggExtra::ggMarginal(p = plot.pcoa1, type = 'boxplot', size = 10, groupFill = TRUE)
+
+plot.pcoa.box <- annotate_figure(
+  plot.pcoa.box,
+  top = text_grob("Jaccard 72h (ASVs)", face = "bold", size = 12),
+)
+
+plot.pcoa.box
+
+filename <- paste0("plots/In_vitro/jaccard_t72_asv.png")
+plot.pcoa.box
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+```
+
+
+## STATISTICAL ANALYSIS
+
+### PERMANOVA
+
+#### DISPERTION
+
+First we will test the beta diversity dispertion to determine whether any differences in dispertion might cause any PERMANOVA differences.
+
+```{r betadisp-b, eval=TRUE}
+
+# Calculate betadispertion
+bdisp <- betadisper(dist.used, mdat[,VAR])
+
+# Run statical test
+anova(bdisp)
+
+# Run posthoc test if significant and more than two groups
+TukeyHSD(bdisp)
+plot(TukeyHSD(bdisp))
+
+# Plot dispertion
+boxplot(bdisp)
+
+```
+
+#### RUN TEST
+
+```{r permanova-b, eval=TRUE}
+
+# set seeds
+set.seed(9)
+
+# Pairwise test
+permanova_pairwise(x = dist.used, grp = mdat$Treatment, padj = "fdr")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+
+## SESSION INFO
+
+The analysis was run in the following environment:
+
+```{r packages, eval=TRUE}
+sessionInfo()
+```

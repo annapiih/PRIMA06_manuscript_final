@@ -1,0 +1,1879 @@
+---
+title: "PRIMA06 Relative abundance"
+author: "annapiih"
+date: '`r Sys.Date()`'
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: true
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA06_", Sys.Date(), "_relative_abundance.html")) 
+    })
+---
+
+# Intro {.tabset .tabset-fade .tabset-pills}
+
+This markdown contains commands for relative abundance data in PRIMA06 animal study. 
+
+By default, R uses the folder where the markdown file is saved as the working directory  
+
+
+```{r setup, eval=TRUE, echo=TRUE, message=FALSE,warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE ,warning = FALSE, message = FALSE)
+
+# Load libraries
+library(tidyverse)
+library(phyloseq)
+library(ggpubr)
+library(rstatix)
+library(kableExtra)
+library(picante)
+library(readr)
+library(forcats)
+library(ggsci)
+library (RColorBrewer)
+library(viridis)
+library(ggpmisc)
+library(multipanelfigure)
+library(ggplot2)
+library(grid)
+
+# Create used folders if missing
+if (!file.exists("plots")) dir.create(file.path(getwd(), "plots"))
+if (!file.exists("scripts")) dir.create(file.path(getwd(), "scripts"))
+if (!file.exists("output")) dir.create(file.path(getwd(), "output"))
+
+```
+
+
+
+# Erysipelotrichaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 2
+#### Prepare dataset 
+```{r Erysipelotrichaceae_D02_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D02'),] 
+
+# Test normality 
+shapiro_test(dat, Erysipelotrichaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Erysipelotrichaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Erysipelotrichaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Erysipelotrichaceae_D02_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Erysipelotrichaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Erysipelotrichaceae (Day 2)")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Erysipelotrichaceae, type = "common")
+
+```
+
+#### Statistical testing 
+```{r Erysipelotrichaceae_D02_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Erysipelotrichaceae ~ Group, data = dat)
+kruskal # not significant
+
+filename <- paste0("plots/Relative_abundance/Erysipelotrichaceae_d02.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Day 9 
+#### Prepare dataset 
+```{r Erysipelotrichaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Erysipelotrichaceae) # Normally distributed 
+
+ggqqplot(dat,x = "Erysipelotrichaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Erysipelotrichaceae~Group) # Assumption is not met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Erysipelotrichaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Erysipelotrichaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  scale_y_continuous(limits=c(0,4))+
+  ylab("Relative abundance")+
+  ggtitle("Erysipelotrichaceae")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Erysipelotrichaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Erysipelotrichaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Erysipelotrichaceae ~ Group, data = dat)
+kruskal # significant
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Erysipelotrichaceae ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+filename <- paste0("plots/Relative_abundance/Erysipelotrichaceae_d09.png")
+plot_final 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Correlation with TT 
+```{r correlation_Erysipelotrichaceae, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Erysipelotrichaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ ggtitle("Erysipelotrichaceae")+
+  scale_y_continuous(limits=c(0, 4))
+
+filename <- paste0("plots/Relative_abundance/erysipelotrichaceae_corr_d05.png")
+plot_D05 <- plot_D05 + My_Theme  
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+  
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Erysipelotrichaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ ggtitle("Erysipelotrichaceae")+
+  scale_y_continuous(limits=c(0, 4))
+
+
+filename <- paste0("plots/Relative_abundance/erysipelotrichaceae_corr_av.png")
+plot_av <- plot_av + My_Theme 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Bacteroidaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 2
+#### Prepare dataset 
+```{r Bacteroidaceae_D02_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D02'),] 
+
+# Test normality 
+shapiro_test(dat, Bacteroidaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Bacteroidaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Bacteroidaceae~Group) # Assumption is met 
+
+
+```
+
+#### Visualization + summary statistics 
+```{r Bacteroidaceae_D02_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Bacteroidaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Bacteroidaceae (Day 2)")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Bacteroidaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Bacteroidaceae_D02_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Bacteroidaceae ~ Group, data = dat)
+kruskal # not significant
+
+
+filename <- paste0("plots/Relative_abundance/Bacteroidaceae_d02.png")
+plot 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Day 9 
+#### Prepare dataset 
+```{r Bacteroidaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Bacteroidaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Bacteroidaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Bacteroidaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Bacteroidaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Bacteroidaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  scale_y_continuous(limits=c(0,12), breaks = scales::pretty_breaks(n=6))+
+  ylab("Relative abundance")+
+  ggtitle("Bacteroidaceae")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Bacteroidaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Bacteroidaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Bacteroidaceae ~ Group, data = dat)
+kruskal # significant
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Bacteroidaceae ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+# Create output plot
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE, y.position = c(10,11,12))
+
+filename <- paste0("plots/Relative_abundance/Bacteroidaceae_d09.png")
+plot_final 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Correlation with TT 
+```{r correlation_ox_Bacteroidaceae, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme( 
+  plot.title = element_text(size = 12)) 
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Bacteroidaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ ggtitle("Bacteroidaceae")+
+  scale_y_continuous(limits=c(0, 12), breaks = scales::pretty_breaks(n=6))
+
+filename <- paste0("plots/Relative_abundance/Bacteroidaceae_corr_D05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Bacteroidaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ ggtitle("Bacteroidaceae")+
+  scale_y_continuous(limits=c(0, 12), breaks = scales::pretty_breaks(n=6))
+
+filename <- paste0("plots/Relative_abundance/Bacteroidaceae_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Porphyromonadaceae 
+## Day 2
+#### Prepare dataset 
+```{r Porphyromonadaceae_D02_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D02'),] 
+
+# Test normality 
+shapiro_test(dat, Porphyromonadaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Porphyromonadaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Porphyromonadaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Porphyromonadaceae_D02_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Porphyromonadaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Porphyromonadaceae (Day 2)")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Porphyromonadaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Porphyromonadaceae_D02_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Porphyromonadaceae ~ Group, data = dat)
+kruskal # not significant
+
+filename <- paste0("plots/Relative_abundance/Porphyromonadaceae_d02.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+## Day 9 
+#### Prepare dataset 
+```{r Porphyromonadaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Porphyromonadaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Porphyromonadaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Porphyromonadaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Porphyromonadaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Porphyromonadaceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0,1), breaks = scales::pretty_breaks(n=5))+
+  ylab("Relative abundance")+
+  ggtitle("Porphyromonadaceae")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Porphyromonadaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Porphyromonadaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Porphyromonadaceae ~ Group, data = dat)
+kruskal # not significant 
+
+
+# Create output plot
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+filename <- paste0("plots/Relative_abundance/Porphyromonadaceae_d09.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Correlation with TT 
+```{r correlation_Porphyromonadaceae, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme( 
+  plot.title = element_text(size = 12)) 
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Porphyromonadaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ ggtitle("Porphyromonadaceae")+
+  scale_y_continuous(limits=c(0, 1), breaks = scales::pretty_breaks(n=5))
+
+filename <- paste0("plots/Relative_abundance/Porphyromonadaceae_corr_D05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Porphyromonadaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+  ggtitle("Porphyromonadaceae")+
+  scale_y_continuous(limits=c(0, 1), breaks = scales::pretty_breaks(n=5))
+
+filename <- paste0("plots/Relative_abundance/Porphyromonadaceae_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Akkermansiaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 2
+#### Prepare dataset 
+```{r Akkermansiaceae_D02_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D02'),] 
+
+# Test normality 
+shapiro_test(dat, Akkermansiaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Akkermansiaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Akkermansiaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Akkermansiaceae_D02_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Akkermansiaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Akkermansiaceae (Day 2)")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Akkermansiaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Akkermansiaceae_D02_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Akkermansiaceae ~ Group, data = dat)
+kruskal # not significant
+
+filename <- paste0("plots/Relative_abundance/Akkermansiaceae_d02.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Day 9 
+#### Prepare dataset 
+```{r Akkermansiaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Akkermansiaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Akkermansiaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Akkermansiaceae~Group) # Assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Akkermansiaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Akkermansiaceae",
+           fill = "Group") + 
+  geom_point(size = 1, color = "black") +
+  scale_y_continuous(limits=c(0,0.08))+
+  ylab("Relative abundance")+
+  ggtitle("Akkermansiaceae")+
+  xlab(NULL)+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  scale_fill_brewer(palette = "Pastel1")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Akkermansiaceae, type = "common")
+
+```
+
+
+#### Statistical testing 
+
+```{r Akkermansiaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Akkermansiaceae ~ Group, data = dat)
+kruskal # significant 
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Akkermansiaceae ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+# Create output plot
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+plot_final <- plot + My_Theme + stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE, y.position = c(0.07,0.08)) 
+
+filename <- paste0("plots/Relative_abundance/Akkermansiaceae_d09.png")
+plot_final 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+## Correlation with TT 
+```{r correlation_Akkermansiaceae, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Akkermansiaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ ggtitle("Akkermansiaceae")+
+  scale_y_continuous(limits=c(0, 0.08))+ggtitle("Akkermansiaceae")
+
+filename <- paste0("plots/Relative_abundance/Akkermansiaceae_corr_d05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Akkermansiaceae", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ ggtitle("Akkermansiaceae")+
+  scale_y_continuous(limits=c(0, 0.08))+ggtitle("Akkermansiaceae")
+
+filename <- paste0("plots/Relative_abundance/Akkermansiaceae_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# ** NOT INCLUDED **
+Following analyses are not included in the puplication 
+
+# Phocaeicola {.tabset .tabset-fade .tabset-pills}
+## Day 9 
+#### Prepare dataset 
+```{r Phocaeicola_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),]
+
+# Test normality 
+shapiro_test(dat, Phocaeicola) # Not normally distributed 
+
+ggqqplot(dat,x = "Phocaeicola") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Phocaeicola~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Phocaeicola_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Phocaeicola",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Phocaeicola")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Phocaeicola, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Phocaeicola_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Phocaeicola ~ Group, data = dat)
+kruskal # significant 
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Phocaeicola ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+# Create output plot
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+filename <- paste0("plots/Relative_abundance/Not_included/phocaeicola_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Correlation with TT 
+```{r correlation_Phocaeicola, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme(
+  plot.title = element_text(size = 12))
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Phocaeicola", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ggtitle("Phocaeicola")+ 
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=6))
+  
+filename <- paste0("plots/Relative_abundance/Not_included/Phocaeicola_corr_D05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Phocaeicola", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ggtitle("Phocaeicola") +
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=6))
+
+filename <- paste0("plots/Relative_abundance/Not_included/Phocaeicola_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Bacteroides {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Bacteroides_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Bacteroides) # Not normally distributed 
+
+ggqqplot(dat,x = "Bacteroides") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Bacteroides~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Bacteroides_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Bacteroides",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Bacteroides")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Bacteroides, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Bacteroides_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Bacteroides ~ Group, data = dat)
+kruskal # significant 
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Bacteroides ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+# Create output plot
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE, y.position = c(6,6.5))
+
+filename <- paste0("plots/Relative_abundance/Not_included/bacteroides_d09.png")
+plot_final 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+ 
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+## Correlation with TT 
+```{r correlation_Bacteroides, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+ 
+My_Theme = theme(
+  plot.title = element_text(size = 12))
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Bacteroides", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ ggtitle("Bacteroides")+
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=6))
+
+filename <- paste0("plots/Relative_abundance/Not_included/bacteroides_corr_D05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+  
+
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Bacteroides", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ggtitle("Bacteroides")+ 
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=6))
+
+filename <- paste0("plots/Relative_abundance/Not_included/Bacteroides_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Longibaculum {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Longibaculum_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Longibaculum) # Not normally distributed 
+
+ggqqplot(dat,x = "Longibaculum") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Longibaculum~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Longibaculum_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Longibaculum",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Longibaculum")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Longibaculum, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Longibaculum_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Longibaculum ~ Group, data = dat)
+kruskal # not significant 
+
+# Create output plot 
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+plot_final <- plot + My_Theme 
+
+filename <- paste0("plots/Relative_abundance/Not_included/Longibaculum_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+## Correlation with TT 
+```{r correlation_Longibaculum, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+My_Theme = theme(
+  plot.title = element_text(size = 12))
+
+# Plot for relative abundance day 5 vs TT day 5 
+# Create the new dataset 
+dat_D05 <- dat[dat$Day %in% c('D05'),] 
+
+plot_D05 <- ggscatter(dat_D05, x = "TT_D05", y = "Longibaculum", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (day 5)", ylab = "Relative abundance (day 5)") + 
+  theme_classic()+ggtitle("Longibaculum")+
+  scale_y_continuous(limits=c(0, 1), breaks = scales::pretty_breaks(n=10))
+
+filename <- paste0("plots/Relative_abundance/Not_included/Longibaculum_corr_D05.png")
+plot_D05 <- plot_D05 + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+  
+# Plot for relative abundance day 9 vs TT average of D08/D10 
+# Create the new dataset 
+dat_av <- dat[dat$Day %in% c('D09'),] 
+
+plot_av <- ggscatter(dat_av, x = "TT_AV", y = "Longibaculum", shape = 20, conf.int = FALSE, cor.coef = TRUE, cor.method = "spearman", xlab = "Transit time (average D08/D10)", ylab = "Relative abundance (day 9)") + 
+  theme_classic()+ ggtitle("Longibaculum")+
+  scale_y_continuous(limits=c(0, 1), breaks = scales::pretty_breaks(n=10))
+
+filename <- paste0("plots/Relative_abundance/Not_included/Longibaculum_corr_av.png")
+plot_av <- plot_av + My_Theme
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Amedibacillus {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Amedibacillus_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Amedibacillus) # Not normally distributed 
+
+ggqqplot(dat,x = "Amedibacillus") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Amedibacillus~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Amedibacillus_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Amedibacillus",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Amedibacillus")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Amedibacillus, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Amedibacillus_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Amedibacillus ~ Group, data = dat)
+kruskal # not significant 
+
+# Create output plot 
+My_Theme = theme(
+  plot.title = element_text(size = 12)) 
+
+plot_final <- plot + My_Theme 
+
+filename <- paste0("plots/Relative_abundance/Not_included/Amedibacillus_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Holdemania {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Holdemania_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Holdemania) # Not normally distributed 
+
+ggqqplot(dat,x = "Holdemania") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Holdemania~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Holdemania_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Holdemania",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Holdemania")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Holdemania, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Holdemania_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Holdemania ~ Group, data = dat)
+kruskal # Significant 
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Holdemania ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE, y.position = c(0.23,0.25)) 
+
+
+filename <- paste0("plots/Relative_abundance/Not_included/Holdemania_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Sutterellaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Sutterellaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Sutterellaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Sutterellaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Sutterellaceae~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Sutterellaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Sutterellaceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Sutterellaceae")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Sutterellaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Sutterellaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Sutterellaceae ~ Group, data = dat)
+kruskal # Not significant 
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + My_Theme 
+
+
+filename <- paste0("plots/Relative_abundance/Not_included/Sutterellaceae_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Rikenellaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Rikenellaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Rikenellaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Rikenellaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Rikenellaceae~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Rikenellaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Rikenellaceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Rikenellaceae")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Rikenellaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Rikenellaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Rikenellaceae ~ Group, data = dat)
+kruskal # Significant 
+
+# Post hoc test: Dunn's test   
+stat.test <- dat %>%
+  dunn_test(Rikenellaceae ~ Group)%>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + 
+  My_Theme +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE, y.position = c(5)) 
+
+
+filename <- paste0("plots/Relative_abundance/Not_included/Rikenellaceae_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Prevotellaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Prevotellaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Prevotellaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Prevotellaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Prevotellaceae~Group) # Assumption is not met
+
+```
+
+#### Visualization + summary statistics 
+```{r Prevotellaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Prevotellaceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Prevotellaceae")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Prevotellaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Prevotellaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Prevotellaceae ~ Group, data = dat)
+kruskal # Not significant 
+
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + My_Theme 
+
+
+filename <- paste0("plots/Relative_abundance/Not_included/Prevotellaceae_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Eggerthellaceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Eggerthellaceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Eggerthellaceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Eggerthellaceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Eggerthellaceae~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Eggerthellaceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Eggerthellaceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Eggerthellaceae")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Eggerthellaceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Eggerthellaceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Eggerthellaceae ~ Group, data = dat)
+kruskal # not significant 
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + My_Theme  
+
+filename <- paste0("plots/Relative_abundance/Not_included/Eggerthellaceae_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Deferribacteraceae {.tabset .tabset-fade .tabset-pills}
+
+## Day 9 
+#### Prepare dataset 
+```{r Deferribacteraceae_D09_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/relative_abundance.csv")
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% 
+  mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% 
+  mutate_at("Treatment", factor, levels = c("Control", "Treatment"))%>%
+  mutate_at("Day", factor, levels = c("D02", "D05", "D09")) %>% 
+  mutate_at("Animal", factor) %>% 
+  mutate_at("Treatment", factor)
+
+dat <- dat[dat$Day %in% c('D09'),] 
+
+# Test normality 
+shapiro_test(dat, Deferribacteraceae) # Not normally distributed 
+
+ggqqplot(dat,x = "Deferribacteraceae") 
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(Deferribacteraceae~Group) # Assumption is met
+
+```
+
+#### Visualization + summary statistics 
+```{r Deferribacteraceae_D09_vis, eval = TRUE}
+
+# Visualise data 
+plot <- dat %>%
+  ggboxplot(x = "Group",
+           y = "Deferribacteraceae",
+           fill = "Group") + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("Relative abundance")+
+  ggtitle("Deferribacteraceae")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  scale_fill_brewer(palette = "Pastel1")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+  
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Deferribacteraceae, type = "common")
+
+```
+
+#### Statistical testing 
+
+```{r Deferribacteraceae_D09_stat, eval = TRUE}
+
+# Kruskal Wallis test 
+kruskal <- kruskal.test(Deferribacteraceae ~ Group, data = dat)
+kruskal # not significant 
+
+# Create output plots 
+My_Theme = theme(
+  plot.title = element_text(size = 12))  
+
+plot_final <- plot + My_Theme 
+
+filename <- paste0("plots/Relative_abundance/Not_included/Deferribacteraceae_d09.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```

@@ -1,0 +1,256 @@
+---
+title: "PRIMA06 DAtest"
+author: "annapiih"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: true
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("MicrobiomeAnalysis_", Sys.Date(), '.html')) 
+    })
+
+params:
+    input: "R_objects/Phyloseq_harsh.Rdata"
+    group_var: "Group"
+    subject_var: "Animal"
+    time_var: "Day"
+---
+
+```{r setup, eval=TRUE, echo=TRUE, message=FALSE,warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE ,warning = FALSE, message = FALSE)
+
+# Load libraries
+library(tidyverse)
+library(phyloseq)
+library(decontam)
+library(pals)
+library(ggpubr)
+library(vegan)
+library(phangorn)
+library(kableExtra)
+library(DAtest)
+
+# Create used folders if missing
+if (!file.exists("R_objects")) dir.create(file.path(getwd(), "R_objects"))
+if (!file.exists("plots")) dir.create(file.path(getwd(), "plots"))
+if (!file.exists("tables")) dir.create(file.path(getwd(), "tables"))
+if (!file.exists("scripts")) dir.create(file.path(getwd(), "scripts"))
+if (!file.exists("output")) dir.create(file.path(getwd(), "output"))
+
+# Save params
+saveRDS(params, file = "R_objects/CA_params.RDS")
+```
+
+# INFO
+
+In this analysis, we will use the DA test package [(Russel et al., 2018)](https://www.biorxiv.org/content/10.1101/241802v1) for analysis of differential abundance. However, since the test cannot be trusted when there is a seperation associated with the predictor (in this case, treatment groups), the package will only be used to screen the data. Taxa tables will be exported and differences in abundance of the identified taxa will be tested in the scripts "GMH_5_Relative_abundance" and "GMH_6_Absolute abundance".   
+
+## AGGLOMERATE DATA
+Depending on the project and data it might be relevant to agglomerate data at species or higher taxonomic level for this type of analysis.
+
+```{r agglomerate, eval=TRUE, echo=TRUE}
+# load
+load("R_objects/Phyloseq_harsh.Rdata")
+
+# agglomerate at species and genus level
+phy.sp <- tax_glom(phy, taxrank = "Species")
+phy.ge <- tax_glom(phy, taxrank = "Genus")
+phy.fa <- tax_glom(phy, taxrank = "Family")
+phy.or <- tax_glom(phy, taxrank = "Order")
+phy.cl <- tax_glom(phy, taxrank = "Class")
+phy.ph <- tax_glom(phy, taxrank = "Phylum")
+
+# save agglomerated phyloseq objects
+save(phy.sp, phy.ge, phy.fa, phy.or, phy.cl, phy.ph, file = "R_objects/Agglomerated.RData")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+
+## TEST DIFFERENTIAL ABUNDANCE {.tabset .tabset-fade .tabset-pills}
+
+There are many different methods that can be used to calculate differential abundance, all with their own advantages and disadvantages. Which method to use depends on the data and therefore I will be using DAtest [@DAtest] as described by [Russel et al. (2018)](https://doi.org/10.1101/241802).
+
+### FAMILY
+#### EXPORT TABLES  
+```{r export-family, eval=TRUE, echo=TRUE}
+# Load data 
+load("R_objects/Agglomerated.RData")
+
+# Filter genera in top 10 on any day
+fam_top <- filter_rank(phy.fa, group = "Day", min.rank = 10, includes = "any")
+fam_top <- transform_sample_counts(fam_top, function(x) x/sum(x)*100)
+fam_top <- psmelt(fam_top)
+write_csv(fam_top, file = "output/FamilyAbundanceTop10.csv")
+
+
+# Transform from counts to percentages
+phy.ra <- transform_sample_counts(phy.fa, function(x) x/sum(x)*100)
+
+# merge sample data, otu table, and taxonomy in one
+filt.m <- psmelt(phy.ra)
+
+# Create summary statistics
+res <- filt.m %>% group_by(Family, Day, Group) %>% get_summary_stats(Abundance, type = "mean_sd")  
+
+# Export tables
+write_csv(filt.m, file ="output/FamilyAbundance.csv")
+write_csv(res, file= "output/FamilyAbundanceSummary.csv")
+
+
+```
+
+#### TEST METHOD (D09)
+```{r testDA_family, eval=TRUE, echo=TRUE,fig.width=10, fig.height=5}
+params <- readRDS("R_objects/CA_params.RDS")
+# load
+load("R_objects/Phyloseq_harsh.Rdata")
+load("R_objects/Agglomerated.RData")
+
+phy.fa <- subset_samples(phy.fa, Day == "D09")
+
+# Filter data
+filt <- preDA(data = phy.fa, min.reads = 20, min.samples = 2)
+
+# Test best method 
+filt.test <- testDA(filt, predictor = "Group", effectSize = 5, k = NULL, cores = 4)
+
+# Evaluate the plot and summary table
+summary(filt.test)
+plot(filt.test)
+
+# Choose test with high power (test only used to screen data for relevant taxa)
+
+```
+
+#### RUN DAtest (D09)
+```{r DAtest_family, eval=TRUE, echo=TRUE}
+
+# Run the selected analysis
+filt.DA <- DA.poi(filt, predictor = "Group")
+
+# Evaluate the plot and summary table
+table(filt.DA$pval < 0.05)
+
+filt.DA[filt.DA$pval < 0.05,]
+
+# Create a subset of the samples
+filt.ra <- transform_sample_counts(filt, function(x) x/sum(x)*100)
+DA.sig <- prune_taxa(filt.DA$Feature[filt.DA$pval < 0.05], x = filt.ra)
+
+# melt the data
+DAm <- psmelt(DA.sig)
+
+# Create plot
+pseudocount <- min(DAm$Abundance[DAm$Abundance != 0])
+da_plot <- ggplot(DAm, aes(x = Family, y = Abundance+pseudocount, color = Group)) + geom_boxplot() + scale_y_log10() + coord_flip()
+
+# Save plot 
+filename <- paste0("plots/Relative_abundance/DAtest_family.png")
+da_plot
+suppressMessages(ggsave(filename = filename, width = 2400, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+```
+
+### GENUS
+#### EXPORT TABLES
+```{r export-genus, eval=TRUE, echo=TRUE}
+# Martin Playing
+# Load data 
+load("R_objects/Agglomerated.RData")
+
+# # Filter genera in top 10 on any day
+gen_top <- filter_rank(phy.ge, group = "Day", min.rank = 10, includes = "any")
+gen_top <- transform_sample_counts(gen_top, function(x) x/sum(x)*100)
+gen_top <- psmelt(gen_top)
+write_csv(gen_top, file = "output/GenusAbundanceTop10.csv")
+
+# Transform from counts to percentages
+phy.ra <- transform_sample_counts(phy.ge, function(x) x/sum(x)*100)
+
+# merge sample data, otu table, and taxonomy in one
+filt.m <- psmelt(phy.ra)
+
+# Create summary statistics
+res <- filt.m %>% group_by(Genus, Day, Group) %>% get_summary_stats(Abundance, type = "mean_sd")  
+
+# Export tables
+write_csv(filt.m, file ="output/GenusAbundance.csv")
+write_csv(res, file= "output/GenusAbundanceSummary.csv")
+
+
+```
+
+
+#### TEST METHOD (D09)
+DA tests 
+```{r testDA_genus_D09, eval=TRUE, echo=TRUE,fig.width=10, fig.height=5}
+
+params <- readRDS("R_objects/CA_params.RDS")
+# load
+load("R_objects/Phyloseq_harsh.Rdata")
+load("R_objects/Agglomerated.RData")
+
+phy.ge <- subset_samples(phy.sp, Day == "D09")
+
+# Filter data
+filt <- preDA(data = phy.ge, min.reads = 20, min.samples = 2)
+
+# Test best method 
+filt.test <- testDA(filt, predictor = "Group", effectSize = 5, cores = 4)
+
+# Evaluate the plot and summary table
+summary(filt.test)
+plot(filt.test)
+
+# Choose test with high power (test only used to screen data for relevant taxa) 
+
+```
+
+#### RUN DAtest (D09)
+
+```{r run_test_genus_D09, eval=TRUE, echo=TRUE}
+# Run the selected analysis
+filt.DA <- DA.poi(filt, predictor = "Group")
+
+# Evaluate the plot and summary table
+table(filt.DA$pval.adj < 0.05)
+
+filt.DA[filt.DA$pval.adj < 0.05,]
+
+# Create a subset of the samples
+filt.ra <- transform_sample_counts(filt, function(x) x/sum(x)*100)
+DA.sig <- prune_taxa(filt.DA$Feature[filt.DA$pval < 0.05], x = filt.ra)
+
+# melt the data
+DAm <- psmelt(DA.sig)
+
+# Create plot
+pseudocount <- min(DAm$Abundance[DAm$Abundance != 0])
+da_plot <- ggplot(DAm, aes(x = Genus, y = Abundance+pseudocount, color = Group)) + geom_boxplot() + scale_y_log10() + coord_flip()
+
+# Save plot 
+filename <- paste0("plots/Relative_abundance/DAtest_genus.png")
+da_plot
+suppressMessages(ggsave(filename = filename, width = 2400, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+```
+
+
+

@@ -1,0 +1,925 @@
+---
+title: "PRIMA06 Metabolite analysis"
+author: "annapiih"
+date: '`r Sys.Date()`'
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: true
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA06_", Sys.Date(), "_Metabolites.html")) 
+    })
+---
+
+# Intro {.tabset .tabset-fade .tabset-pills}
+
+This markdown contains commands for analysing metabolite data from the animal study PRIMA06. 
+
+By default, R uses the folder where the markdown file is saved as the working directory  
+
+
+```{r setup, eval=TRUE, echo=TRUE, message=FALSE,warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE ,warning = FALSE, message = FALSE)
+
+# Load libraries
+library(tidyverse)
+library(phyloseq)
+library(ggpubr)
+library(rstatix)
+library(kableExtra)
+library(picante)
+library(readr)
+library(forcats)
+library(ggsci)
+library (RColorBrewer)
+library(viridis)
+library(ggpmisc)
+library(multipanelfigure)
+library(ggplot2)
+library(grid)
+
+# Create used folders if missing
+if (!file.exists("plots")) dir.create(file.path(getwd(), "plots"))
+if (!file.exists("scripts")) dir.create(file.path(getwd(), "scripts"))
+if (!file.exists("output")) dir.create(file.path(getwd(), "output"))
+
+```
+
+
+# Acetic acid (cecum){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_acetic, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except day 11)
+dat_acetic <- metadat[!is.na(metadat[,"Acetic_acid_cecum"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat_acetic <- dat_acetic %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D11")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat_acetic$Acetic_acid_cecum)$out
+out_ind <- which(dat_acetic$Acetic_acid_cecum %in% c(out))
+out_ind
+
+dat_acetic[out_ind, ]
+
+# Test normality 
+shapiro_test(dat_acetic, Acetic_acid_cecum) # Not normally distributed
+ggqqplot(dat_acetic,x = "Acetic_acid_cecum") 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_acetic, eval = TRUE}
+
+# Get summary statistics 
+dat_acetic %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Acetic_acid_cecum, type = "mean_sd")
+
+# Visualize data 
+plot_acetic <-ggboxplot(dat_acetic, 
+                        x = "Group", 
+                        y = "Acetic_acid_cecum",
+                        fill = "Group", 
+                        palette = "Pastel1", 
+                        outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Acetic acid in cecum")+
+  scale_y_continuous(limits=c(2000,9000), breaks = scales::pretty_breaks(n=8))+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+## Statistical testing 
+
+```{r acetic_stat, eval = TRUE}
+
+# Kruskal wallis for unpaired data 
+kruskal.test <- kruskal.test(Acetic_acid_cecum ~ Group, data = dat_acetic) # not significant 
+
+
+filename <- paste0("plots/Metabolites/acetic_acid_cecum.png")
+plot_acetic 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Propanoic acid (cecum) {.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_propanoic, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except day 11)
+dat_prop <- metadat[!is.na(metadat[,"Propanoic_acid_cecum"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order
+dat_prop <- dat_prop %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D11")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat_prop$Propanoic_acid_cecum)$out
+out_ind <- which(dat_prop$Propanoic_acid_cecum %in% c(out))
+out_ind
+
+dat_prop[out_ind, ]
+
+# Remove animal 21 and 22 before statistical analysis (high outliers in the high-dose group) 
+dat_prop_stat <- dat_prop[-c(21,22),]
+
+# Test normality 
+shapiro_test(dat_prop_stat, Propanoic_acid_cecum) # Normally distributed
+
+ggqqplot(dat_prop_stat,x = "Propanoic_acid_cecum") 
+
+# Levene's test (test for homogeneity)
+dat_prop_stat %>% 
+  levene_test(Propanoic_acid_cecum~Group) # Assumption is met 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_propanoic, eval = TRUE}
+
+# Get summary statistics 
+dat_prop %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Propanoic_acid_cecum, type = "common") 
+
+# Visualize data (with outliers)
+plot_prop <-ggboxplot(dat_prop, 
+                      x = "Group", 
+                      y = "Propanoic_acid_cecum",
+                      fill = "Group", 
+                      palette = "Pastel1", 
+                      outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Propanoic acid in cecum")+
+  #scale_y_continuous(limits=c(450,1450), breaks = scales::pretty_breaks(n=6))+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Visualize data (without outliers)
+plot_prop_2 <-ggboxplot(dat_prop_stat, 
+                      x = "Group", 
+                      y = "Propanoic_acid_cecum",
+                      fill = "Group", 
+                      palette = "Pastel1", 
+                      outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Propanoic acid in cecum")+
+  #scale_y_continuous(limits=c(450,1450), breaks = scales::pretty_breaks(n=6))+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r propanoic_stat, eval = TRUE}
+
+# ANOVA  
+anova <- aov(Propanoic_acid_cecum ~ Group, data = dat_prop_stat)
+summary(anova)
+
+# Between group comparison: Unpaired Wilcoxon  
+stat.test <- dat_prop_stat %>%
+  t_test(Propanoic_acid_cecum ~ Group) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group") %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+plot_prop_final <- 
+  plot_prop + 
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", tip.length = 0.01, hide.ns = TRUE, size = 3.5, y.position = c(1800,2000)) 
+
+
+filename <- paste0("plots/Metabolites/propanoic_acid_cecum.png")
+plot_prop_final 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Butanoic acid (cecum){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_butanoic, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D11)
+dat_but <- metadat[!is.na(metadat[,"Butanoic_acid_cecum"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat_but <- dat_but %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D11")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat_but$Butanoic_acid_cecum)$out
+out_ind <- which(dat_but$Butanoic_acid_cecum %in% c(out))
+out_ind
+
+dat_but[out_ind, ] # no outliers
+
+# Test normality 
+shapiro_test(dat_but, Butanoic_acid_cecum) # Normally distributed
+
+ggqqplot(dat_but,x = "Butanoic_acid_cecum")  
+
+# Levene's test (test for homogeneity)
+dat_but %>% 
+  levene_test(Butanoic_acid_cecum~Group) # Assumption is met
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_butanoic, eval = TRUE}
+
+# Get summary statistics 
+dat_but %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Butanoic_acid_cecum, type = "mean_sd") 
+
+# Visualize data 
+plot_but <-ggboxplot(dat_but, 
+                     x = "Group", 
+                     y = "Butanoic_acid_cecum",
+                     fill = "Group", 
+                     palette = "Pastel1", 
+                     outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Butanoic acid in cecum")+
+  scale_y_continuous(limits=c(700, 3500), breaks = scales::pretty_breaks(n=10))+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r test_butanoic, eval = TRUE}
+
+# ANOVA 
+anova <- aov(Butanoic_acid_cecum ~ Group, data = dat_but)
+summary(anova) # not significant 
+
+
+filename <- paste0("plots/Metabolites/butanoic_acid_cecum.png")
+plot_but 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Acetic acid (change){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_acetic_feces, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D11)
+dat <- metadat[!is.na(metadat[,"Acetic_acid_change"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D07")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat$Acetic_acid_change)$out
+out_ind <- which(dat$Acetic_acid_change %in% c(out))
+out_ind
+
+dat[out_ind, ] # No outliers 
+
+# Test normality 
+shapiro_test(dat, Acetic_acid_change) # Normally distributed
+ggqqplot(dat,x = "Acetic_acid_change") 
+
+# Levene's test (test for homogeneity) 
+dat %>% 
+  levene_test(Acetic_acid_change~Group) # Assumption is met 
+```
+
+## Visualization + summary statistics 
+```{r visualize_acetic_feces, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Acetic_acid_change, type = "mean_sd") 
+
+# Visualize data (new version)
+plot <-ggboxplot(dat, 
+                 x = "Group", 
+                 y = "Acetic_acid_change",
+              fill = "Group", 
+              palette = "Pastel1", 
+              outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(-1300, 3200), breaks = scales::pretty_breaks(n=10))+
+  ylab("Change (ug/g feces)")+
+  xlab(NULL)+
+  ggtitle("Fecal acetic acid: Change between day 3 and 7")+
+  theme_classic()+
+  theme(legend.position="none")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+## Statistical testing 
+
+```{r test_acetic_feces, eval = TRUE}
+
+# ANOVA
+anova <- aov(Acetic_acid_change ~ Group, data = dat)
+summary(anova) # Not significant 
+
+filename <- paste0("plots/Metabolites/acetic_acid_change.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Propanoic acid (change){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_propanoic_feces, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D11)
+dat <- metadat[!is.na(metadat[,"Propanoic_acid_change"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D07")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat$Propanoic_acid_change)$out
+out_ind <- which(dat$Propanoic_acid_change %in% c(out))
+out_ind
+
+dat[out_ind, ] # No outliers 
+
+# Test normality 
+shapiro_test(dat, Propanoic_acid_change) # Normally distributed
+ggqqplot(dat,x = "Propanoic_acid_change") 
+
+# Levene's test (test for homogeneity) 
+dat %>% 
+  levene_test(Propanoic_acid_change~Group) # Assumption is met 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_propanoic_feces, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Propanoic_acid_change, type = "mean_sd") 
+
+# Visualize data (new version)
+plot <-ggboxplot(dat, 
+                 x = "Group", 
+                 y = "Propanoic_acid_change",
+              fill = "Group", 
+              palette = "Pastel1", 
+              outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(-200, 500), breaks = scales::pretty_breaks(n=10))+
+  ylab("Change (ug/g feces)")+
+  xlab(NULL)+
+  ggtitle("Fecal propanoic acid: Change between day 3 and 7")+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r test_propanoic_feces, eval = TRUE}
+
+# ANOVA 
+anova <- aov(Propanoic_acid_change ~ Group, data = dat)
+summary(anova) # Not significant
+
+
+filename <- paste0("plots/Metabolites/propanoic_acid_change.png")
+plot 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Butanoic acid (change){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_butanoic_feces, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D11)
+dat <- metadat[!is.na(metadat[,"Butanoic_acid_change"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D07")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat$Butanoic_acid_change)$out
+out_ind <- which(dat$Butanoic_acid_change %in% c(out))
+out_ind
+
+dat[out_ind, ] 
+
+# Test normality 
+shapiro_test(dat, Butanoic_acid_change) # Normally distributed
+ggqqplot(dat,x = "Butanoic_acid_change") 
+
+# Levene's test (test for homogeneity) 
+dat %>% 
+  levene_test(Butanoic_acid_change~Group) # Assumption is met 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_butanoic_feces, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Butanoic_acid_change, type = "mean_sd") 
+
+# Visualize data (new version)
+plot <-ggboxplot(dat, 
+                 x = "Group", 
+                 y = "Butanoic_acid_change",
+              fill = "Group", 
+              palette = "Pastel1", 
+              outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(-900, 1200), breaks = scales::pretty_breaks(n=10))+
+  ylab("Change (ug/g feces)")+
+  xlab(NULL)+
+  ggtitle("Fecal butanoic acid: Change between day 3 and 7")+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r test_butanoic_feces, eval = TRUE}
+
+# ANOVA  
+anova <- aov(Butanoic_acid_change ~ Group, data = dat)
+summary(anova) # Not significant 
+
+filename <- paste0("plots/Metabolites/butanoic_acid_change.png")
+plot 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Isobutyric acid (cecum) {.tabset .tabset-fade .tabset-pills}
+## Prepare dataset 
+```{r prepare_isobutyric, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except day 11)
+dat_isoB <- metadat[!is.na(metadat[,"Isobutyric_acid_cecum"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order
+dat_isoB <- dat_isoB %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D11")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat_isoB$Isobutyric_acid_cecum)$out
+out_ind <- which(dat_isoB$Isobutyric_acid_cecum %in% c(out))
+out_ind
+
+dat_isoB[out_ind, ] 
+
+# Test normality 
+shapiro_test(dat_isoB, Isobutyric_acid_cecum) # Normally distributed
+
+ggqqplot(dat_isoB,x = "Isobutyric_acid_cecum")  
+
+# Levene's test (test for homogeneity)
+dat_isoB %>% 
+  levene_test(Isobutyric_acid_cecum~Group) # Assumption is met
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_isobutyric, eval = TRUE}
+
+# Get summary statistics 
+dat_isoB %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Isobutyric_acid_cecum, type = "common") 
+
+# Visualize data 
+plot_isoB <-ggboxplot(dat_isoB, 
+                     x = "Group", 
+                     y = "Isobutyric_acid_cecum",
+                     fill = "Group", 
+                     palette = "Pastel1", 
+                     outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Isobutyric acid in cecum")+
+  #scale_y_continuous(limits=c(700, 3500), breaks = scales::pretty_breaks(n=10))+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r isobutyric_stat, eval = TRUE}
+
+# ANOVA 
+anova <- aov(Isobutyric_acid_cecum ~ Group, data = dat_isoB)
+summary(anova) # not significant 
+
+filename <- paste0("plots/Metabolites/Isobutyric_acid_cecum.png")
+plot_isoB
+suppressMessages(ggsave(filename = filename, device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Isovaleric acid (cecum) {.tabset .tabset-fade .tabset-pills}
+## Prepare dataset 
+```{r prepare_isovaleric, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except day 11)
+dat_isoV <- metadat[!is.na(metadat[,"Isovaleric_acid_cecum"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order
+dat_isoV <- dat_isoV %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D11")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat_isoV$Isovaleric_acid_cecum)$out
+out_ind <- which(dat_isoV$Isovaleric_acid_cecum %in% c(out))
+out_ind
+
+dat_isoV[out_ind, ] 
+
+# Test normality 
+shapiro_test(dat_isoV, Isovaleric_acid_cecum) # NOT normally distributed
+
+ggqqplot(dat_isoV,x = "Isovaleric_acid_cecum")  
+
+# Levene's test (test for homogeneity)
+dat_isoV %>% 
+  levene_test(Isovaleric_acid_cecum~Group) # Assumption is met
+
+```
+
+### Visualization + summary statistics 
+```{r visualize_isovaleric, eval = TRUE}
+
+# Get summary statistics 
+dat_isoV %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Isovaleric_acid_cecum, type = "common") 
+
+# Visualize data 
+plot_isoV <-ggboxplot(dat_isoV, 
+                     x = "Group", 
+                     y = "Isovaleric_acid_cecum",
+                     fill = "Group", 
+                     palette = "Pastel1", 
+                     outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  ylab("ug/g cecum")+
+  xlab(NULL)+
+  ggtitle("Isovaleric acid in cecum")+
+  #scale_y_continuous(limits=c(700, 3500), breaks = scales::pretty_breaks(n=10))+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+### Statistical testing 
+
+```{r isovaleric_stat, eval = TRUE}
+
+# Kruskal wallis 
+kruskal <- kruskal.test(Isovaleric_acid_cecum ~ Group, data = dat_isoV) 
+
+kruskal # Significant 
+
+# Between group comparison: Dunn's test
+stat.test <- dat_isoV %>%
+  dunn_test(Isovaleric_acid_cecum ~ Group) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Group") %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test # No comparisons significant after correction 
+
+filename <- paste0("plots/Metabolites/isovaleric_acid_cecum.png")
+plot_isoV
+suppressMessages(ggsave(filename = filename, device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# Isobutyric acid (change){.tabset .tabset-fade .tabset-pills}
+## Prepare dataset 
+```{r prepare_isob_feces, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D07)
+dat <- metadat[!is.na(metadat[,"Isobutyric_acid_change"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D07")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat$Isobutyric_acid_change)$out
+out_ind <- which(dat$Isobutyric_acid_change %in% c(out))
+out_ind
+
+dat[out_ind, ] 
+
+# Test normality 
+shapiro_test(dat, Isobutyric_acid_change) # Normally distributed
+ggqqplot(dat,x = "Isobutyric_acid_change") 
+
+# Levene's test (test for homogeneity) 
+dat %>% 
+  levene_test(Isobutyric_acid_change~Group) # Assumption is met 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_isob_feces, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Isobutyric_acid_change, type = "mean_sd") 
+
+# Visualize data (new version)
+plot <-ggboxplot(dat, 
+                 x = "Group", 
+                 y = "Isobutyric_acid_change",
+              fill = "Group", 
+              palette = "Pastel1", 
+              outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  #scale_y_continuous(limits=c(-900, 1200), breaks = scales::pretty_breaks(n=10))+
+  ylab("Change (ug/g feces)")+
+  xlab(NULL)+
+  ggtitle("Fecal isobutyric acid: Change between day 3 and 7")+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r test_isob_feces, eval = TRUE}
+
+# ANOVA  
+anova <- aov(Isobutyric_acid_change ~ Group, data = dat)
+summary(anova) # Not significant 
+
+filename <- paste0("plots/Metabolites/Isobutyric_acid_change.png")
+plot 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Isovaleric acid (change){.tabset .tabset-fade .tabset-pills}
+
+## Prepare dataset 
+```{r prepare_isov_feces, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove all days except D07)
+dat <- metadat[!is.na(metadat[,"Isovaleric_acid_change"]),]
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D07")) %>% mutate_at("Animal", factor) 
+
+# Identify outliers 
+out <- boxplot.stats(dat$Isovaleric_acid_change)$out
+out_ind <- which(dat$Isovaleric_acid_change %in% c(out))
+out_ind
+
+dat[out_ind, ] 
+
+# Test normality 
+shapiro_test(dat, Isovaleric_acid_change) # Normally distributed
+ggqqplot(dat,x = "Isovaleric_acid_change") 
+
+# Levene's test (test for homogeneity) 
+dat %>% 
+  levene_test(Isovaleric_acid_change~Group) # Assumption is met 
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_isov_feces, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group) %>% 
+  get_summary_stats(Isovaleric_acid_change, type = "mean_sd") 
+
+# Visualize data (new version)
+plot <-ggboxplot(dat, 
+                 x = "Group", 
+                 y = "Isovaleric_acid_change",
+              fill = "Group", 
+              palette = "Pastel1", 
+              outlier.shape = NA) + 
+  geom_point(size = 0.5, color = "black") +
+  #scale_y_continuous(limits=c(-900, 1200), breaks = scales::pretty_breaks(n=10))+
+  ylab("Change (ug/g feces)")+
+  xlab(NULL)+
+  ggtitle("Fecal isovaleric acid: Change between day 3 and 7")+
+  theme_classic()+
+  theme(legend.position="none")+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+```
+
+## Statistical testing 
+
+```{r test_isov_feces, eval = TRUE}
+
+# ANOVA  
+anova <- aov(Isovaleric_acid_change ~ Group, data = dat)
+summary(anova) # Not significant 
+
+filename <- paste0("plots/Metabolites/Isovaleric_acid_change.png")
+plot 
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+# Heat map SCFAs vs TT
+```{r heatmap, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/input_heatmap.csv")
+dat_1 <- dat
+
+colnames(dat_1)[colnames(dat_1) == "TT_D10"] = "Transit time (Day 10)"
+colnames(dat_1)[colnames(dat_1) == "Acetic_acid_cecum"] = "Acetic acid (cecum)"
+colnames(dat_1)[colnames(dat_1) == "Propanoic_acid_cecum"] = "Propanoic acid (cecum)"
+colnames(dat_1)[colnames(dat_1) == "Butanoic_acid_cecum"] = "Butanoic acid (cecum)"
+
+# create vector with the relevant variables (can also be subset by column indeces)
+CON.VARS <- c("Transit time (Day 10)", "Acetic acid (cecum)", "Propanoic acid (cecum)", "Butanoic acid (cecum)")
+
+# Plot all variables against each other
+pairs(dat_1[,CON.VARS], pch = 19,  cex = 0.5,
+      lower.panel=NULL)
+
+# Run Pearson test
+(corrmat <- cor(dat_1[,CON.VARS], method = "spearman", use = "complete.obs"))
+
+# Create heatmap
+corrmat_rounded <- round(corrmat, 2)
+
+melted_corrmat_rounded <- tibble(Var1 = rep(row.names(corrmat_rounded), length(row.names(corrmat_rounded))),
+                                 Var2 = rep(row.names(corrmat_rounded), each = length(row.names(corrmat_rounded))),
+                                 dist = as.numeric(matrix(corrmat_rounded)))
+
+filtered_data <- melted_corrmat_rounded %>%mutate_if(is.factor, as.numeric) %>% 
+  filter(Var2 > Var1)
+
+
+plot <- ggplot(filtered_data, aes(x = Var1, y = Var2, fill = dist)) + 
+  labs(title = "Correlation between transit time and SCFAs") + 
+  geom_tile(color = "white") + 
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limit = c(-1,1), 
+                      space = "Lab", name = "Correlation coefficient") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, size = 12, hjust = 1, vjust = 1), 
+        axis.text.y = element_text(size = 12, hjust = 1, vjust = 0.5),
+        axis.title.x = element_blank(), axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank()) + 
+  geom_text(aes(x = Var1, y = Var2, label = dist), color = "black", size = 4) + 
+  coord_fixed()
+
+# Test correlations 
+with(dat, cor.test(TT_D10,Propanoic_acid_cecum, method = "spearman", use = "complete.obs"))
+
+with(dat, cor.test(TT_D10,Acetic_acid_cecum, method = "spearman", use = "complete.obs"))
+
+with(dat, cor.test(TT_D10,Butanoic_acid_cecum, method = "spearman", use = "complete.obs"))
+
+# Adjust p-valyes 
+p.values <- c(.0001969,.635,.03945)
+p.adjust(p.values, method = "fdr")
+
+# Save plot 
+filename <- paste0("plots/Metabolites/heatmap_TT_scfas.png")
+plot
+suppressMessages(ggsave(filename = filename, width = 1800, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```

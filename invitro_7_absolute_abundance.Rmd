@@ -1,0 +1,1042 @@
+---
+title: "In vitro absolute abundance"
+author: "APIH"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: false
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA08", Sys.Date(), "_differential_abundance.html"))
+        })
+params:
+    input: "R_objects/Phyloseq_invitro.Rdata"
+    group_var: "Treatment"
+    subject_var: "Tube"
+    time_var: "Time_point"
+---
+
+
+```{r setup, eval=TRUE, echo=TRUE, message=FALSE,warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE ,warning = FALSE, message = FALSE)
+
+# Load libraries
+library(tidyverse)
+library(phyloseq)
+library(decontam)
+library(pals)
+library(ggpubr)
+library(vegan)
+library(phangorn)
+library(kableExtra)
+library(DAtest)
+library(rstatix)
+library(ggplot2)
+
+# save parameters
+saveRDS(params, "R_objects/params_DA_invitro.RDS")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+## FAMILY TRAJECTORIES 
+### Bacteroidaceae
+#### Prepare dataset 
+```{r Bacteroidaceae_prep, eval = TRUE}
+# Load data 
+dat <- read_csv("output/FamilyAbundance_invitro.csv")
+
+# Select data 
+dat <- dat[dat$Family %in% c('Bacteroidaceae'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Add a column with tube identifier that I forgot to add in the metadata in the first place 
+# Read metadata 
+metadat <- read_csv("input/lop_invitro_meta.csv")
+metadat <- subset(metadat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# remove mock and negative control 
+metadat <- metadat[!is.na(metadat[,"Tube"]),]
+
+# Sort both data frames 
+metadat <- metadat[order(metadat$Sample),]
+dat <- dat[order(dat$Sample),]
+
+# Add the extra variable column
+dat$Tube <- metadat$Tube
+
+
+# Create the Absolute abundance variable 
+# Transform Bac_load to Bac_counts
+dat$Bac_counts <- 10^dat$Bac_load
+
+# Print the first few rows to check the transformation
+head(dat)
+
+# Create absolute abundance variable
+dat$Abundance_abs <- dat$Abundance * dat$Bac_counts
+
+# Add a pseudocount of +1 to Abundance_abs to handle zeros before log transforming
+# dat$Abundance_log <- log(dat$Abundance_abs + 1) #only if data contains zeros
+dat$Abundance_log <- log10(dat$Abundance_abs )
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube", factor)
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+
+# Create subsets 
+dat <- dat[dat$Time_point %in% c('T24', 'T48', 'T72'),]
+dat_sal <- dat[dat$Treatment %in% c('Saline'),]
+dat_low <- dat[dat$Treatment %in% c('Imolope_low'),] 
+dat_high <- dat[dat$Treatment %in% c('Imolope_high'),] 
+
+# Order data sets 
+dat_sal <- dat_sal[order(dat_sal$Tube),]
+dat_low <- dat_low[order(dat_low$Tube),]
+dat_high <- dat_high[order(dat_high$Tube),]
+
+dat_sal <- dat_sal[order(dat_sal$Time_point),]
+dat_low <- dat_low[order(dat_low$Time_point),]
+dat_high <- dat_high[order(dat_high$Time_point),]
+  
+
+# Test normality 
+dat %>%
+  ggqqplot("Abundance") + facet_grid(as.formula(paste("Time_point","Treatment",sep = " ~ ")))
+
+dat %>%
+  group_by(!!sym("Time_point"), !!sym("Treatment")) %>%
+  shapiro_test(!!sym("Abundance"))
+
+# Normality assumption is met 
+
+```
+
+#### Visualization + summary statistics 
+```{r Bacteroidaceae_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment, Time_point) %>% 
+  get_summary_stats(Abundance_log, type = "common")
+
+my_cols_sal <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low<- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+plot_sal <- dat_sal %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#88419d") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 12), breaks = scales::pretty_breaks(n=4))+
+  ylab("Absolute abundance (log)")+
+  theme_classic()+
+  ggtitle("Saline")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_sal)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_low %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CDC673") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 12), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_high %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CD853F") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 12), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+#### Statistical testing 
+```{r Bacteroidaceae_stat, eval = TRUE}
+
+# Two-way anova for repeated measures 
+two.way <- anova_test(data = dat, 
+                      dv = !!sym("Abundance_log"), 
+                      wid = !!sym("Tube"), 
+                      between = !!sym("Treatment"),
+                      within = !!sym("Time_point"))
+get_anova_table(two.way) # No significant effects 
+
+```
+
+
+#### Output plot
+```{r Bacteroidaceae_output, eval = TRUE}
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) 
+
+plot_sal_final <- plot_sal + My_Theme 
+
+plot_low_final <- plot_low + My_Theme 
+
+plot_high_final <- plot_high + My_Theme 
+
+plot_final <- ggarrange(plot_sal_final, plot_low_final, plot_high_final, ncol=3, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Bacteroidaceae", color = "black", face = "bold"))
+
+filename <- paste0("plots/In_vitro/Bacteroidaceae.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+ rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+ invisible(gc())
+ 
+```
+
+### Porphyromonadaceae
+#### Prepare dataset 
+```{r Porphyromonadaceae_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("output/FamilyAbundance_invitro.csv")
+
+# Select data 
+dat <- dat[dat$Family %in% c('Porphyromonadaceae'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Add a column with tube identifier that I forgot to add in the metadata in the first place 
+# Read metadata 
+metadat <- read_csv("input/lop_invitro_meta.csv")
+metadat <- subset(metadat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# remove mock and negative control 
+metadat <- metadat[!is.na(metadat[,"Tube"]),]
+
+# Sort both data frames 
+metadat <- metadat[order(metadat$Sample),]
+dat <- dat[order(dat$Sample),]
+
+# Add the extra variable column
+dat$Tube <- metadat$Tube
+
+
+# Create the Absolute abundance variable 
+# Transform Bac_load to Bac_counts
+dat$Bac_counts <- 10^dat$Bac_load
+
+# Print the first few rows to check the transformation
+head(dat)
+
+# Create absolute abundance variable
+dat$Abundance_abs <- dat$Abundance * dat$Bac_counts
+
+# Add a pseudocount of +1 to Abundance_abs to handle zeros before log transforming
+# dat$Abundance_log <- log(dat$Abundance_abs + 1) #only if data contains zeros
+dat$Abundance_log <- log10(dat$Abundance_abs )
+
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube", factor)
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+
+# Create subsets 
+dat <- dat[dat$Time_point %in% c('T24', 'T48', 'T72'),]
+
+# Drop unused levels
+dat$Time_point <- droplevels(dat$Time_point)
+
+dat_sal <- dat[dat$Treatment %in% c('Saline'),]
+dat_low <- dat[dat$Treatment %in% c('Imolope_low'),] 
+dat_high <- dat[dat$Treatment %in% c('Imolope_high'),] 
+
+# Order data sets 
+dat_sal <- dat_sal[order(dat_sal$Tube),]
+dat_low <- dat_low[order(dat_low$Tube),]
+dat_high <- dat_high[order(dat_high$Tube),]
+
+dat_sal <- dat_sal[order(dat_sal$Time_point),]
+dat_low <- dat_low[order(dat_low$Time_point),]
+dat_high <- dat_high[order(dat_high$Time_point),]
+  
+
+# Test normality 
+dat %>%
+  ggqqplot("Abundance") + facet_grid(as.formula(paste("Time_point","Treatment",sep = " ~ ")))
+
+dat %>%
+  group_by(!!sym("Time_point"), !!sym("Treatment")) %>%
+  shapiro_test(!!sym("Abundance"))
+
+```
+
+#### Visualization + summary statistics 
+```{r Porphyromonadaceae_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment, Time_point) %>% 
+  get_summary_stats(Abundance_log, type = "common")
+
+my_cols_sal <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low<- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+plot_sal <- dat_sal %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#88419d") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(9, 11), breaks = scales::pretty_breaks(n=3))+
+  ylab("Absolute abundance (log)")+
+  theme_classic()+
+  ggtitle("Saline")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_sal)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_low %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CDC673") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(9, 11), breaks = scales::pretty_breaks(n=3))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_high %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CD853F") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(9, 11), breaks = scales::pretty_breaks(n=3))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+#### Statistical testing 
+```{r Porphyromonadaceae_stat, eval = TRUE}
+
+# Two-way anova for repeated measures 
+two.way <- anova_test(data = dat, 
+                      dv = !!sym("Abundance_log"), 
+                      wid = !!sym("Tube"), 
+                      between = !!sym("Treatment"),
+                      within = !!sym("Time_point"))
+get_anova_table(two.way) # No significance 
+
+
+```
+
+
+#### Output plot
+```{r Porphyromonadaceae_output, eval = TRUE}
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) 
+
+plot_sal_final <- plot_sal + My_Theme 
+
+plot_low_final <- plot_low + My_Theme  
+
+plot_high_final <- plot_high + My_Theme  
+
+plot_final <- ggarrange(plot_sal_final, plot_low_final, plot_high_final, ncol=3, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Porphyromonadaceae", color = "black", face = "bold"))
+
+filename <- paste0("plots/In_vitro/Porphyromonadaceae.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+ rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+ invisible(gc())
+ 
+```
+### Erysipelotrichaceae
+#### Prepare dataset 
+```{r Erysipelotrichaceae_prep, eval = TRUE}
+# Load data 
+dat <- read_csv("output/FamilyAbundance_invitro.csv")
+
+# Select data 
+dat <- dat[dat$Family %in% c('Erysipelotrichaceae'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Add a column with tube identifier that I forgot to add in the metadata in the first place 
+# Read metadata 
+metadat <- read_csv("input/lop_invitro_meta.csv")
+metadat <- subset(metadat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# remove mock and negative control 
+metadat <- metadat[!is.na(metadat[,"Tube"]),]
+
+# Sort both data frames 
+metadat <- metadat[order(metadat$Sample),]
+dat <- dat[order(dat$Sample),]
+
+# Add the extra variable column
+dat$Tube <- metadat$Tube
+
+
+# Create the Absolute abundance variable 
+# Transform Bac_load to Bac_counts
+dat$Bac_counts <- 10^dat$Bac_load
+
+# Print the first few rows to check the transformation
+head(dat)
+
+# Create absolute abundance variable
+dat$Abundance_abs <- dat$Abundance * dat$Bac_counts
+
+# Add a pseudocount of +1 to Abundance_abs to handle zeros before log transforming
+# dat$Abundance_log <- log(dat$Abundance_abs + 1) #only if data contains zeros
+dat$Abundance_log <- log10(dat$Abundance_abs )
+
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube", factor)
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+
+# Create subsets 
+dat <- dat[dat$Time_point %in% c('T24', 'T48', 'T72'),]
+
+# Drop unused levels
+dat$Time_point <- droplevels(dat$Time_point)
+
+dat_sal <- dat[dat$Treatment %in% c('Saline'),]
+dat_low <- dat[dat$Treatment %in% c('Imolope_low'),] 
+dat_high <- dat[dat$Treatment %in% c('Imolope_high'),] 
+
+# Order data sets 
+dat_sal <- dat_sal[order(dat_sal$Tube),]
+dat_low <- dat_low[order(dat_low$Tube),]
+dat_high <- dat_high[order(dat_high$Tube),]
+
+dat_sal <- dat_sal[order(dat_sal$Time_point),]
+dat_low <- dat_low[order(dat_low$Time_point),]
+dat_high <- dat_high[order(dat_high$Time_point),]
+  
+
+# Test normality 
+dat %>%
+  ggqqplot("Abundance") + facet_grid(as.formula(paste("Time_point","Treatment",sep = " ~ ")))
+
+dat %>%
+  group_by(!!sym("Time_point"), !!sym("Treatment")) %>%
+  shapiro_test(!!sym("Abundance"))
+
+```
+
+#### Visualization + summary statistics 
+```{r Erysipelotrichaceae_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment, Time_point) %>% 
+  get_summary_stats(Abundance_log, type = "common")
+
+my_cols_sal <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low<- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+plot_sal <- dat_sal %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#88419d") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 9.5), breaks = scales::pretty_breaks(n=4))+
+  ylab("Absolute abundance (log)")+
+  theme_classic()+
+  ggtitle("Saline")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_sal)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_low %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CDC673") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 9.5), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_high %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CD853F") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(7, 9.5), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+#### Statistical testing 
+```{r Erysipelotrichaceae_stat, eval = TRUE}
+
+# Two-way anova for repeated measures 
+two.way <- anova_test(data = dat, 
+                      dv = !!sym("Abundance_log"), 
+                      wid = !!sym("Tube"), 
+                      between = !!sym("Treatment"),
+                      within = !!sym("Time_point"))
+get_anova_table(two.way) # No significance 
+
+```
+
+
+#### Output plot
+```{r Erysipelotrichaceae_output, eval = TRUE}
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) 
+
+plot_sal_final <- plot_sal + My_Theme 
+
+plot_low_final <- plot_low + My_Theme  
+
+plot_high_final <- plot_high + My_Theme  
+
+plot_final <- ggarrange(plot_sal_final, plot_low_final, plot_high_final, ncol=3, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Erysipelotrichaceae", color = "black", face = "bold"))
+
+filename <- paste0("plots/In_vitro/Erysipelotrichaceae.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+ rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+ invisible(gc())
+ 
+```
+
+
+### Akkermansiaceae
+##### Prepare dataset 
+```{r Akkermansiaceae_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("output/FamilyAbundance_invitro.csv")
+
+# Select data 
+dat <- dat[dat$Family %in% c('Akkermansiaceae'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Add a column with tube identifier that I forgot to add in the metadata in the first place 
+# Read metadata 
+metadat <- read_csv("input/lop_invitro_meta.csv")
+metadat <- subset(metadat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# remove mock and negative control 
+metadat <- metadat[!is.na(metadat[,"Tube"]),]
+
+# Sort both data frames 
+metadat <- metadat[order(metadat$Sample),]
+dat <- dat[order(dat$Sample),]
+
+# Add the extra variable column
+dat$Tube <- metadat$Tube
+
+
+# Create the Absolute abundance variable 
+# Transform Bac_load to Bac_counts
+dat$Bac_counts <- 10^dat$Bac_load
+
+# Print the first few rows to check the transformation
+head(dat)
+
+# Create absolute abundance variable
+dat$Abundance_abs <- dat$Abundance * dat$Bac_counts
+
+# Add a pseudocount of +1 to Abundance_abs to handle zeros before log transforming
+dat$Abundance_log <- log10(dat$Abundance_abs + 1) #only if data contains zeros
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube", factor)
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+
+# Create subsets 
+dat <- dat[dat$Time_point %in% c('T24', 'T48', 'T72'),]
+
+# Drop unused levels
+dat$Time_point <- droplevels(dat$Time_point)
+
+dat_sal <- dat[dat$Treatment %in% c('Saline'),]
+dat_low <- dat[dat$Treatment %in% c('Imolope_low'),] 
+dat_high <- dat[dat$Treatment %in% c('Imolope_high'),] 
+
+# Order data sets 
+dat_sal <- dat_sal[order(dat_sal$Tube),]
+dat_low <- dat_low[order(dat_low$Tube),]
+dat_high <- dat_high[order(dat_high$Tube),]
+
+dat_sal <- dat_sal[order(dat_sal$Time_point),]
+dat_low <- dat_low[order(dat_low$Time_point),]
+dat_high <- dat_high[order(dat_high$Time_point),]
+  
+
+# Test normality 
+dat %>%
+  ggqqplot("Abundance_log") + facet_grid(as.formula(paste("Time_point","Treatment",sep = " ~ ")))
+
+dat %>%
+  group_by(!!sym("Time_point"), !!sym("Treatment")) %>%
+  shapiro_test(!!sym("Abundance_log")) # not working - can't handle zeros? treated as not significant  
+
+```
+
+##### Visualization + summary statistics 
+```{r Akkermansiaceae_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment, Time_point) %>% 
+  get_summary_stats(Abundance_log, type = "common")
+
+my_cols_sal <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low<- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+plot_sal <- dat_sal %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#88419d") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0,7), breaks = scales::pretty_breaks(n=4))+
+  ylab("Absolute abundance (log)")+
+  theme_classic()+
+  ggtitle("Saline")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_sal)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_low %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CDC673") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0,7), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_high %>%
+  ggboxplot(x = "Time_point",
+           y = "Abundance_log",
+           fill = "Time_point") + 
+  #geom_line(aes(group = "Tube"), color = "#CD853F") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0,7), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High imolope")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+##### Statistical testing 
+```{r Akkermansiaceae_stat, eval = TRUE}
+
+# Friedman test 
+f <- friedman.test(Abundance_log ~ Time_point|Tube, data = dat) # Significant 
+
+# Post hoc tests 
+stat.test.sal <- dat_sal %>% 
+  wilcox_test(Abundance_log~Time_point, paired = TRUE, p.adjust.method = "fdr") %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Time_point", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.low <- dat_low %>% 
+  wilcox_test(Abundance_log~Time_point, paired = TRUE, p.adjust.method = "fdr") %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Time_point", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)%>%
+ filter(!is.na(p.adj))
+
+stat.test.high <- dat_high %>% 
+  wilcox_test(Abundance_log~Time_point, paired = TRUE, p.adjust.method = "fdr") %>%
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Time_point", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+```
+
+
+##### Output plot
+```{r Akkermansiaceae_output, eval = TRUE}
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) 
+
+plot_sal_final <- plot_sal + My_Theme + 
+  stat_pvalue_manual(stat.test.sal, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE)
+
+plot_low_final <- plot_low + My_Theme + 
+  stat_pvalue_manual(stat.test.low, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_high_final <- plot_high + My_Theme +  
+  stat_pvalue_manual(stat.test.high, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_final <- ggarrange(plot_sal_final, plot_low_final, plot_high_final, ncol=3, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Akkermansiaceae", color = "black", face = "bold"))
+
+filename <- paste0("plots/In_vitro/Akkermansiaceae_trajectories.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+# Clear the environment and release memory
+ rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+ invisible(gc())
+ 
+```
+
+# ***********************
+##NOT INCLUDED IN MANUSCRIPT
+
+### BAC LOAD 
+#### Timepoint 24h
+##### Prepare dataset 
+```{r load_24h_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/lop_invitro_meta.csv")
+
+# Select data 
+dat <- dat[dat$Time_point%in% c('T24'),]
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+  
+# Test normality 
+shapiro_test(dat,Bac_load)  
+ggqqplot(dat,x = "Bac_load") # Normality: yes
+
+
+```
+
+##### Visualization + summary statistics 
+```{r load_24h_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment) %>% 
+  get_summary_stats(Bac_load, type = "common")
+
+
+# Visualise data
+plot <- dat %>%
+  ggboxplot(x = "Treatment",
+           y = "Bac_load",
+           fill = "Treatment") + 
+  geom_point(size = 1, color = "black") +
+  #scale_y_continuous(limits=c(9,12))+
+  ylab("16S copies/ul (log)")+
+  ggtitle("Bacterial load (24h)")+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        legend.position = "right")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))+
+  scale_fill_manual(values=c("#CC3333","#0066CC", "#88419d"), labels = c("Saline vehicle", "Saline + low imolope", "Saline + high imolope"))
+
+
+
+
+```
+
+##### Statistical testing 
+```{r load_24h_stat, eval = TRUE}
+
+# ANOVA 
+anova <- anova_test(Bac_load ~ Treatment, data = dat) # not significant
+
+
+print(plot)
+ggsave(filename = "plots/In_vitro/Bac_load_t24.png", plot = plot,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+#### Timepoint 48h 
+##### Prepare dataset 
+```{r load_48h_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/lop_invitro_meta.csv")
+
+# Select data 
+dat <- dat[dat$Time_point%in% c('T48'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+  
+# Test normality 
+shapiro_test(dat,Bac_load)  
+ggqqplot(dat,x = "Bac_load") # Normality: yes
+
+
+```
+
+##### Visualization + summary statistics 
+```{r load_48h_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment) %>% 
+  get_summary_stats(Bac_load, type = "common")
+
+
+# Visualise data
+plot <- dat %>%
+  ggboxplot(x = "Treatment",
+           y = "Bac_load",
+           fill = "Treatment") + 
+  geom_point(size = 1, color = "black") +
+  #scale_y_continuous(limits=c(9,12))+
+  ylab("16S copies/ul (log)")+
+  ggtitle("Bacterial load (48h)")+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        legend.position = "right")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))+
+  scale_fill_manual(values=c("#CC3333","#0066CC", "#88419d"), labels = c("Saline vehicle", "Saline + low imolope", "Saline + high imolope"))
+
+
+
+
+```
+
+##### Statistical testing 
+```{r load_48h_stat, eval = TRUE}
+
+# ANOVA 
+anova <- anova_test(Bac_load ~ Treatment, data = dat) # significant
+
+# Post hoc test 
+stat.test <- dat %>% 
+  t_test(Bac_load~Treatment, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Treatment", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE) # nothing significant after correction for multiple comparisons 
+
+
+print(plot)
+ggsave(filename = "plots/In_vitro/Bac_load_t48.png", plot = plot,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+#### Timepoint 72h 
+##### Prepare dataset 
+```{r load_72h_prep, eval = TRUE}
+
+# Load data 
+dat <- read_csv("input/lop_invitro_meta.csv")
+
+# Select data 
+dat <- dat[dat$Time_point%in% c('T72'),] 
+dat <- subset(dat, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate(Treatment = factor(Treatment, levels = c("Saline", "Imolope_low", "Imolope_high"),ordered = TRUE))
+dat <- dat %>% mutate_at("Tube_ID", factor)
+dat <- dat %>% mutate_at("Time_point", factor)
+  
+# Test normality 
+shapiro_test(dat,Bac_load)  
+ggqqplot(dat,x = "Bac_load") # Normality: yes
+
+
+```
+
+##### Visualization + summary statistics 
+```{r load_72h_vis, eval = TRUE}
+
+# Get summary statistics 
+dat %>% 
+  group_by(Treatment) %>% 
+  get_summary_stats(Bac_load, type = "common")
+
+
+# Visualise data
+plot <- dat %>%
+  ggboxplot(x = "Treatment",
+           y = "Bac_load",
+           fill = "Treatment") + 
+  geom_point(size = 1, color = "black") +
+  #scale_y_continuous(limits=c(9,12))+
+  ylab("16S copies/ul (log)")+
+  ggtitle("Bacterial load (72h)")+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), 
+        legend.position = "right")+ 
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))+
+  scale_fill_manual(values=c("#CC3333","#0066CC", "#88419d"), labels = c("Saline vehicle", "Saline + low imolope", "Saline + high imolope"))
+
+
+
+
+```
+
+##### Statistical testing 
+```{r load_72h_stat, eval = TRUE}
+
+# ANOVA 
+anova <- anova_test(Bac_load ~ Treatment, data = dat) # not significant
+
+
+print(plot)
+ggsave(filename = "plots/In_vitro/Bac_load_t72.png", plot = plot,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+

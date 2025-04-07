@@ -1,0 +1,666 @@
+---
+title: "In vitro Microbiome description"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: false
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("<PROJECT>_", Sys.Date(), "_description.html"))
+        })
+params:
+    input: "R_objects/Phyloseq_invitro.Rdata"
+    group_var: "Treatment"
+    subject_var: "Tube"
+    time_var: "Time_point"
+---
+
+# INFO
+
+This template is build to use the output from **GMH_import** as input.
+It will generate a general summary of the microbiome for the project, on
+all taxonomic levels, followed by a detailed summary where the group and
+subject variables is considered in the description.
+
+The output will be observational, containing tables and plots, without
+any statistical analyses.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(GMHmicrobiome)
+library(ggpubr)
+library(kableExtra)
+library(phyloseq)
+
+# save parameters
+saveRDS(params, "R_objects/params_description_invitro.RDS")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# FORMAT DATA
+
+To describe the data we will have to agglommerate the data to each
+taxonomic level. As this is time consuming, the default is to skip this
+step if the file "R_objects/Agglomerated.Rdata" does not exist.
+
+```{r format, include=FALSE, eval=(!file.exists("R_objects/Agglomerated_invitro.Rdata"))}
+# Load data
+load(params$input)
+
+# Update taxa_names
+## Species
+phy.sp <- tax_glom(phy, taxrank = "Species")
+taxnames <- as.vector(tax_table(phy.sp)[,7])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.sp) <- taxnames
+
+## Genus
+phy.ge <- tax_glom(phy, taxrank = "Genus")
+taxnames <- as.vector(tax_table(phy.ge)[,6])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.ge) <- taxnames
+
+## Family
+phy.fa <- tax_glom(phy, taxrank = "Family")
+taxnames <- as.vector(tax_table(phy.fa)[,5])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.fa) <- taxnames
+
+## Order
+phy.or <- tax_glom(phy, taxrank = "Order")
+taxnames <- as.vector(tax_table(phy.or)[,4])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.or) <- taxnames
+
+## Class
+phy.cl <- tax_glom(phy, taxrank = "Class")
+taxnames <- as.vector(tax_table(phy.cl)[,3])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.cl) <- taxnames
+
+## Phylum
+phy.ph <- tax_glom(phy, taxrank = "Phylum")
+taxnames <- as.vector(tax_table(phy.ph)[,2])
+taxdub <- taxnames[duplicated(taxnames)]
+for (tax in taxdub){
+  taxnames[taxnames == tax] <- paste(tax, seq(length(taxnames[taxnames == tax])), sep = "_")
+}
+taxa_names(phy.ph) <- taxnames
+
+# save agglomerated phyloseq objects
+save(phy.sp, phy.ge, phy.fa, phy.or, phy.cl, phy.ph, file = "R_objects/Agglomerated_invitro.RData")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# T24 {.tabset .tabset-dropdown}
+
+This section produces a general description of the data with the plots
+grouped by the group_var, but without using any other metadata.
+
+If there are no relevant groups in this part of the analysis it can also
+be used to indicate batches. If no groups or batches exist, then please
+create a variable that just indicate the project name for all samples.
+
+
+## FAMILY {.tabset .tabset-fade .tabset-pills}
+
+### COUNTS
+
+At family level the microbiome counts are as follows
+
+```{r, warning=FALSE, message=FALSE}
+# load data 
+load("R_objects/Agglomerated_invitro.RData")
+params <- readRDS("R_objects/params_description_invitro.RDS")
+
+# Create subset
+phy.T24 <- subset_samples(phy.fa, Time_point == "T24")
+phy.T24 <- subset_samples(phy.T24, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Transform data
+phy.rel <- transform_sample_counts(phy.T24, fun = function(x) x/sum(x)*100)
+dat <- psmelt(phy.rel)
+
+# summarise per sample
+sumsample <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(Sample) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(-Sample, 
+               names_to = c("Cutoff"), 
+               values_to = "Count") %>% 
+  group_by(Cutoff) %>% 
+  summarise(sample_mean = mean(Count), 
+            sample_sd = sd(Count))
+
+# summarise total
+sumall <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(OTU) %>% 
+  summarise(Abundance = mean(Abundance)) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(cols = everything(), 
+               names_to = c("Cutoff"), 
+               values_to = "Count")
+
+# Combine
+output <- full_join(sumall, sumsample)
+output$Cutoff <- c("All", "n < 0.1%", "0.1% < n < 1.0%", "1.0% < n < 10%", "10%  < n")
+
+# Create output table
+kable(output, row.names = F,digits = 2, caption = 'Count of families in general and per sample',align = "r") %>% 
+  kable_classic(full_width = F, position = "left")
+                                              
+```
+
+### PLOTS
+
+To improve the interpretation of the compositional plots I will pretreat
+the data with three steps:
+
+1.  Filter taxa by average abundance (minimum 1 %) and rank (max 19
+    features + "Others")
+
+2.  Sort the plotted taxa by full phylogeny
+
+3.  Change taxa names in plot to a letter and include table of full
+    taxonomy
+
+```{r, warning=FALSE, message=FALSE}
+# Filter by abundance, then rank
+phy.top <- filter_abundance(phy.rel) %>% filter_rank(min.rank = 19)
+
+#Melt data
+dat <- suppressWarnings(psmelt(phy.top))
+
+# Prevent duplicate column names
+colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")] <- paste(colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")], "old", sep = "_")
+
+# Rename relevant columns
+colnames(dat)[c(1,4)] <- c("Taxa","SampleID")
+
+# Sort taxa
+dat.sort <- sort_taxa(dat) 
+
+# rename taxa
+levels(dat.sort$Taxa) <- LETTERS[seq(length(levels(dat.sort$Taxa)))]
+
+# Create plot
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var),space = "free_x",scales = "free_x") +
+  ggsci::scale_color_d3(palette = "category20") + 
+  ggsci::scale_fill_d3(palette = "category20") + 
+  guides(fill=guide_legend(ncol=2), color=guide_legend(ncol=2)) +
+  clean_theme()
+p
+
+# print tax table
+tax <- dat.sort %>% group_by(Taxa, Kingdom, Phylum, Class, Order, Family) %>% summarise(Abundance = mean(Abundance))
+
+kable(tax,digits = 2,caption = paste("Taxa plotted", sep = " ")) %>%
+  kable_classic(full_width = F, position = "left")
+
+
+# Rename taxa with actual names
+taxa_names <- c("Bacteroidaceae", "Muribaculaceae", "Porphyromonadaceae", "Enterococcaceae", "Lactobacillaceae", "Enterobacteriaceae", "Others")
+levels(dat.sort$Taxa) <- taxa_names
+
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var), space = "free_x", scales = "free_x") +
+  scale_fill_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  scale_color_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  guides(fill = guide_legend(ncol = 1), color = guide_legend(ncol = 1)) +
+  clean_theme()
+p
+
+print(p)
+ggsave(filename = "plots/In_vitro/Description_T24.png", plot = p,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+
+# T48 {.tabset .tabset-dropdown}
+
+This section produces a general description of the data with the plots
+grouped by the group_var, but without using any other metadata.
+
+If there are no relevant groups in this part of the analysis it can also
+be used to indicate batches. If no groups or batches exist, then please
+create a variable that just indicate the project name for all samples.
+
+
+## FAMILY {.tabset .tabset-fade .tabset-pills}
+
+### COUNTS
+
+At family level the microbiome counts are as follows
+
+```{r, warning=FALSE, message=FALSE}
+# load data 
+load("R_objects/Agglomerated_invitro.RData")
+params <- readRDS("R_objects/params_description_invitro.RDS")
+
+# Create subset
+phy.T48 <- subset_samples(phy.fa, Time_point == "T48")
+phy.T48 <- subset_samples(phy.T48, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Transform data
+phy.rel <- transform_sample_counts(phy.T48, fun = function(x) x/sum(x)*100)
+dat <- psmelt(phy.rel)
+
+# summarise per sample
+sumsample <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(Sample) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(-Sample, 
+               names_to = c("Cutoff"), 
+               values_to = "Count") %>% 
+  group_by(Cutoff) %>% 
+  summarise(sample_mean = mean(Count), 
+            sample_sd = sd(Count))
+
+# summarise total
+sumall <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(OTU) %>% 
+  summarise(Abundance = mean(Abundance)) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(cols = everything(), 
+               names_to = c("Cutoff"), 
+               values_to = "Count")
+
+# Combine
+output <- full_join(sumall, sumsample)
+output$Cutoff <- c("All", "n < 0.1%", "0.1% < n < 1.0%", "1.0% < n < 10%", "10%  < n")
+
+# Create output table
+kable(output, row.names = F,digits = 2, caption = 'Count of families in general and per sample',align = "r") %>% 
+  kable_classic(full_width = F, position = "left")
+                                              
+```
+
+### PLOTS
+
+To improve the interpretation of the compositional plots I will pretreat
+the data with three steps:
+
+1.  Filter taxa by average abundance (minimum 1 %) and rank (max 19
+    features + "Others")
+
+2.  Sort the plotted taxa by full phylogeny
+
+3.  Change taxa names in plot to a letter and include table of full
+    taxonomy
+
+```{r, warning=FALSE, message=FALSE}
+# Filter by abundance, then rank
+phy.top <- filter_abundance(phy.rel) %>% filter_rank(min.rank = 19)
+
+#Melt data
+dat <- suppressWarnings(psmelt(phy.top))
+
+# Prevent duplicate column names
+colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")] <- paste(colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")], "old", sep = "_")
+
+# Rename relevant columns
+colnames(dat)[c(1,4)] <- c("Taxa","SampleID")
+
+# Sort taxa
+dat.sort <- sort_taxa(dat) 
+
+# rename taxa
+levels(dat.sort$Taxa) <- LETTERS[seq(length(levels(dat.sort$Taxa)))]
+
+# Create plot
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var),space = "free_x",scales = "free_x") +
+  ggsci::scale_color_d3(palette = "category20") + 
+  ggsci::scale_fill_d3(palette = "category20") + 
+  guides(fill=guide_legend(ncol=2), color=guide_legend(ncol=2)) +
+  clean_theme()
+p
+
+# print tax table
+tax <- dat.sort %>% group_by(Taxa, Kingdom, Phylum, Class, Order, Family) %>% summarise(Abundance = mean(Abundance))
+
+kable(tax,digits = 2,caption = paste("Taxa plotted", sep = " ")) %>%
+  kable_classic(full_width = F, position = "left")
+
+
+# Rename taxa with actual names
+taxa_names <- c("Bacteroidaceae", "Muribaculaceae", "Porphyromonadaceae", "Enterococcaceae", "Lactobacillaceae", "Enterobacteriaceae", "Others")
+levels(dat.sort$Taxa) <- taxa_names
+
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var), space = "free_x", scales = "free_x") +
+  scale_fill_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  scale_color_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  guides(fill = guide_legend(ncol = 1), color = guide_legend(ncol = 1)) +
+  clean_theme()
+p
+
+print(p)
+ggsave(filename = "plots/In_vitro/Description_T48.png", plot = p,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+# T72 {.tabset .tabset-dropdown}
+
+This section produces a general description of the data with the plots
+grouped by the group_var, but without using any other metadata.
+
+If there are no relevant groups in this part of the analysis it can also
+be used to indicate batches. If no groups or batches exist, then please
+create a variable that just indicate the project name for all samples.
+
+
+## FAMILY {.tabset .tabset-fade .tabset-pills}
+
+### COUNTS
+
+At family level the microbiome counts are as follows
+
+```{r, warning=FALSE, message=FALSE}
+# load data 
+load("R_objects/Agglomerated_invitro.RData")
+params <- readRDS("R_objects/params_description_invitro.RDS")
+
+# Create subset
+phy.T72 <- subset_samples(phy.fa, Time_point == "T72")
+phy.T72 <- subset_samples(phy.T72, Treatment %in% c("Saline", "Imolope_low", "Imolope_high"))
+
+# Transform data
+phy.rel <- transform_sample_counts(phy.T72, fun = function(x) x/sum(x)*100)
+dat <- psmelt(phy.rel)
+
+# summarise per sample
+sumsample <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(Sample) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(-Sample, 
+               names_to = c("Cutoff"), 
+               values_to = "Count") %>% 
+  group_by(Cutoff) %>% 
+  summarise(sample_mean = mean(Count), 
+            sample_sd = sd(Count))
+
+# summarise total
+sumall <- dat %>% 
+  filter(Abundance > 0) %>% 
+  group_by(OTU) %>% 
+  summarise(Abundance = mean(Abundance)) %>% 
+  summarise(pct_0 = n(),
+            pct_0.1 = sum(Abundance < 0.1),
+            pct_0_1 = sum(Abundance >= 0.1 & Abundance < 1),
+            pct_1_10 = sum(Abundance >= 1 & Abundance < 10),
+            pct_10 = sum(Abundance > 10)) %>% 
+  pivot_longer(cols = everything(), 
+               names_to = c("Cutoff"), 
+               values_to = "Count")
+
+# Combine
+output <- full_join(sumall, sumsample)
+output$Cutoff <- c("All", "n < 0.1%", "0.1% < n < 1.0%", "1.0% < n < 10%", "10%  < n")
+
+# Create output table
+kable(output, row.names = F,digits = 2, caption = 'Count of families in general and per sample',align = "r") %>% 
+  kable_classic(full_width = F, position = "left")
+                                              
+```
+
+### PLOTS
+
+To improve the interpretation of the compositional plots I will pretreat
+the data with three steps:
+
+1.  Filter taxa by average abundance (minimum 1 %) and rank (max 19
+    features + "Others")
+
+2.  Sort the plotted taxa by full phylogeny
+
+3.  Change taxa names in plot to a letter and include table of full
+    taxonomy
+
+```{r, warning=FALSE, message=FALSE}
+# Filter by abundance, then rank
+phy.top <- filter_abundance(phy.rel) %>% filter_rank(min.rank = 19)
+
+#Melt data
+dat <- suppressWarnings(psmelt(phy.top))
+
+# Prevent duplicate column names
+colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")] <- paste(colnames(dat)[colnames(dat) %in% c("Taxa","SampleID")], "old", sep = "_")
+
+# Rename relevant columns
+colnames(dat)[c(1,4)] <- c("Taxa","SampleID")
+
+# Sort taxa
+dat.sort <- sort_taxa(dat) 
+
+# rename taxa
+levels(dat.sort$Taxa) <- LETTERS[seq(length(levels(dat.sort$Taxa)))]
+
+# Create plot
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var),space = "free_x",scales = "free_x") +
+  ggsci::scale_color_d3(palette = "category20") + 
+  ggsci::scale_fill_d3(palette = "category20") + 
+  guides(fill=guide_legend(ncol=2), color=guide_legend(ncol=2)) +
+  clean_theme()
+p
+
+# print tax table
+tax <- dat.sort %>% group_by(Taxa, Kingdom, Phylum, Class, Order, Family) %>% summarise(Abundance = mean(Abundance))
+
+kable(tax,digits = 2,caption = paste("Taxa plotted", sep = " ")) %>%
+  kable_classic(full_width = F, position = "left")
+
+
+# Rename taxa with actual names
+taxa_names <- c("Bacteroidaceae", "Porphyromonadaceae", "Enterococcaceae", "Lactobacillaceae","Lachnospiraceae", "Ruminococcaceae", "Enterobacteriaceae", "Others")
+levels(dat.sort$Taxa) <- taxa_names
+
+p <- ggplot(dat.sort, aes(x = SampleID,
+                          y = Abundance,
+                          fill = Taxa,
+                          color = Taxa)) +
+  geom_col() +
+  xlab("") + 
+  facet_grid(. ~ get(params$group_var), space = "free_x", scales = "free_x") +
+  scale_fill_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  scale_color_manual(values = ggsci::pal_d3("category20")(length(taxa_names)), labels = taxa_names) +
+  guides(fill = guide_legend(ncol = 1), color = guide_legend(ncol = 1)) +
+  clean_theme()
+p
+
+print(p)
+ggsave(filename = "plots/In_vitro/Description_T72.png", plot = p,
+       dpi = "print", height = 1400, width = 1800, units = "px", device = "png")
+
+
+# clear the environment and release memory
+rm(list = ls(all.names = TRUE))
+invisible(gc())
+
+```
+
+# EXPORT TABLES 
+## Family level 
+```{r export-family, eval=TRUE, echo=TRUE}
+# Load data 
+load("R_objects/Agglomerated_invitro.RData")
+
+# Filter genera in top 10 on any day
+fam_top <- filter_rank(phy.fa, group = "Time_point", min.rank = 10, includes = "any")
+fam_top <- transform_sample_counts(fam_top, function(x) x/sum(x)*100)
+fam_top <- psmelt(fam_top)
+write_csv(fam_top, file = "output/FamilyAbundanceTop10_invitro.csv")
+
+
+# Transform from counts to percentages
+phy.ra <- transform_sample_counts(phy.fa, function(x) x/sum(x)*100)
+
+# merge sample data, otu table, and taxonomy in one
+filt.m <- psmelt(phy.ra)
+
+# Create summary statistics
+res <- filt.m %>% group_by(Family, Time_point, Treatment) %>% get_summary_stats(Abundance, type = "mean_sd")  
+
+# Export tables
+write_csv(filt.m, file ="output/FamilyAbundance_invitro.csv")
+write_csv(res, file= "output/FamilyAbundanceSummary_invitro.csv")
+
+
+```
+
+## Genus level 
+```{r export-genus, eval=TRUE, echo=TRUE}
+# Martin Playing
+# Load data 
+load("R_objects/Agglomerated_invitro.RData")
+
+# # Filter genera in top 10 on any day
+gen_top <- filter_rank(phy.ge, group = "Time_point", min.rank = 10, includes = "any")
+gen_top <- transform_sample_counts(gen_top, function(x) x/sum(x)*100)
+gen_top <- psmelt(gen_top)
+write_csv(gen_top, file = "output/GenusAbundanceTop10_invitro.csv")
+
+# Transform from counts to percentages
+phy.ra <- transform_sample_counts(phy.ge, function(x) x/sum(x)*100)
+
+# merge sample data, otu table, and taxonomy in one
+filt.m <- psmelt(phy.ra)
+
+# Create summary statistics
+res <- filt.m %>% group_by(Genus, Time_point, Treatment) %>% get_summary_stats(Abundance, type = "mean_sd")  
+
+# Export tables
+write_csv(filt.m, file ="output/GenusAbundance_invitro.csv")
+write_csv(res, file= "output/GenusAbundanceSummary_invitro.csv")
+
+
+```
+
+# FINAL COMMENT
+
+This completes the microbiome description.
+
+
+# SETTINGS {.tabset .tabset-fade .tabset-pills}
+
+Overview of the parameters and packages that were used for this
+Rmarkdown.
+
+## PARAMETERS
+
+The following paramenters were set in for this analysis:
+
+```{r parameters, eval=TRUE}
+params <- readRDS("R_objects/params_description_invitro.RDS")
+
+
+tmp <- unlist(params)
+dat <- data.frame(Parameter = names(tmp), Value = unname(tmp))
+
+
+kbl(dat, row.names = F) %>% kable_classic(lightable_options = "striped")
+
+```
+
+## SESSION INFO
+
+The analysis was run in the following environment:
+
+```{r packages, eval=TRUE}
+sessionInfo()
+```

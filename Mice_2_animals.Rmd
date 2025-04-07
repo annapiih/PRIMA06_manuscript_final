@@ -1,0 +1,681 @@
+---
+title: "PRIMA06 Metadata analysis"
+author: "annapiih"
+date: '`r Sys.Date()`'
+output:
+  rmdformats::readthedown:
+    toc_depth: 4
+    collapsed: false
+    code_folding: hide
+    number_sections: true
+knit: (function(inputFile, encoding) { 
+    rmarkdown::render(
+        inputFile, encoding = encoding,
+        output_dir = file.path(dirname(inputFile),"output"),
+        output_file = paste0("PRIMA06_", Sys.Date(), "_Animals.html")) 
+    })
+---
+
+# Intro {.tabset .tabset-fade .tabset-pills}
+
+This markdown contains commands for analyzing metadata in animal studies (transit time, body weight, food intake). 
+
+By default, R uses the folder where the markdown file is saved as the working directory  
+
+
+```{r setup, eval=TRUE, echo=TRUE, message=FALSE,warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE ,warning = FALSE, message = FALSE)
+
+# Load libraries
+library(tidyverse)
+library(phyloseq)
+library(ggpubr)
+library(rstatix)
+library(kableExtra)
+library(picante)
+library(readr)
+library(forcats)
+library(ggsci)
+library (RColorBrewer)
+library(viridis)
+library(ggpmisc)
+library(multipanelfigure)
+library(ggplot2)
+library(grid)
+
+# Create used folders if missing
+if (!file.exists("plots")) dir.create(file.path(getwd(), "plots"))
+if (!file.exists("scripts")) dir.create(file.path(getwd(), "scripts"))
+if (!file.exists("output")) dir.create(file.path(getwd(), "output"))
+
+```
+
+
+# TT between-group comparison (change in minutes)
+
+## Prepare dataset 
+```{r TT_b_prep, eval = TRUE}
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Create the dataset 
+dat <- metadat[metadat$Day %in% c('D05','D08','D10'),] 
+
+dat$Day
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat <- dat %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D05", "D08", "D10")) %>% mutate_at("Animal", factor) 
+
+# Make sure that data is in correct order (for paired analysis)
+dat <- dat[order(dat$Day),]
+
+
+```
+
+## Visualization + summary statistics 
+```{r TT_b_vis, eval = TRUE}
+
+# Plot 
+plot <-
+  ggboxplot(dat, x = "Group", y = "TT_Increase",
+              fill = "Group", palette = "Pastel1", outlier.shape = NA) + 
+  ggtitle("Change in transit time from baseline") + 
+  facet_wrap("Day", nrow = 1, scales = "fixed") +
+  ylab("Minutes change from baseline (day 2)")+ 
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  theme_classic()+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  geom_point(aes(shape = Group), 
+             size = 1.5, 
+             position = position_jitterdodge(jitter.width = 0.01, dodge.width = 0.8)) + 
+  scale_shape_manual(values=c(20,20,20,20))+
+  scale_y_continuous(limits=c(-150, 700), breaks = scales::pretty_breaks(n=7))+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+# Get summary statistics 
+dat %>% 
+  group_by(Group, Day) %>% 
+  get_summary_stats(TT_Increase, type = "common")
+
+```
+
+## Check assumptions 
+```{r TT_b_as, eval = TRUE}
+
+#Shapiro test 
+shapiro_test(dat, TT_Increase) 
+
+ggqqplot(dat,x = "TT_Increase")  
+
+
+# Levene's test (test for homogeneity)
+dat %>% 
+  levene_test(TT_Increase~Group*Day)
+
+```
+
+## Statistical testing 
+```{r TT_b_stat, eval = TRUE}
+
+# Two-way ANOVA 
+two.way <- aov(TT_Increase ~ Day*Group + Error(Animal), data = dat)
+summary(two.way)
+
+
+# Post hoc test 2 
+stat.test <- dat %>% 
+  group_by(Day)%>% 
+  t_test(TT_Increase~Group, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Group", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+plot_final <- plot + 
+  stat_pvalue_manual(stat.test, 
+                     label = "p.adj.signif", 
+                     tip.length = 0.01, 
+                     hide.ns = TRUE, 
+                     size = 3.5, 
+                     y.position = c(560,600,640,600,520,560,600,640)) +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+filename <- paste0("plots/Animals/TT_between.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2400, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+# TT within-group comparison (change in minutes)
+## Prepare dataset 
+```{r TT_w_prep, eval = TRUE}
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Create the dataset 
+dat_tt2 <- metadat[metadat$Day %in% c('D05','D08','D10'),] 
+
+dat_tt2$Day
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat_tt2 <- dat_tt2 %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D05", "D08", "D10")) %>% mutate_at("Animal", factor) 
+
+# Make sure that data is in correct order (for paired analysis)
+dat_tt2 <- dat_tt2[order(dat_tt2$Day),]
+
+```
+
+
+## Visualization + summary statistics 
+```{r TT_w_vis, eval = TRUE}
+
+# Plot 
+plot <-
+  ggboxplot(dat_tt2, x = "Day", y = "TT_Increase",
+              fill = "Group", palette = "Pastel1", outlier.shape = NA) + 
+  ggtitle("Change in transit time from baseline") + 
+  facet_wrap("Group", nrow = 1, scales = "fixed") +
+  ylab("Minutes change from baseline (day 2)")+ 
+  #theme(plot.title = element_text(hjust = 0.5)) +
+  theme_classic()+
+  geom_point(aes(shape = Group), 
+             size = 1.5, 
+             position = position_jitterdodge(jitter.width = 0.01, dodge.width = 0.8)) + 
+  scale_shape_manual(values=c(20,20,20,20))+
+  scale_y_continuous(limits=c(-150, 700), breaks = scales::pretty_breaks(n=7))+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+# Get summary statistics 
+dat_tt2 %>% 
+  group_by(Group, Day) %>% 
+  get_summary_stats(TT_Increase, type = "common")
+
+```
+
+## Check assumptions 
+```{r TT_w_as, eval = TRUE}
+
+#Shapiro test 
+shapiro_test(dat_tt2, TT_Increase) 
+
+ggqqplot(dat_tt2,x = "TT_Increase") # Normal distributed   
+
+
+# Levene's test (test for homogeneity)
+dat_tt2 %>% 
+  levene_test(TT_Increase~Group*Day) # Assumption met 
+
+```
+
+## Statistical testing 
+```{r TT_w_stat, eval = TRUE}
+
+# Two-way anova for repeated measures 
+two.way <- aov(TT_Increase ~ Day*Group + Error(Animal), data = dat_tt2)
+summary(two.way)
+
+# Post hoc test  
+stat.test2 <- dat_tt2 %>% 
+  group_by(Group)%>% 
+  t_test(TT_Increase~Day, paired = TRUE, p.adjust.method = "fdr") %>% 
+  add_significance("p.adj") %>%
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+plot_tt2_final <- plot+
+  stat_pvalue_manual(stat.test2, 
+                     label = "p.adj.signif", 
+                     tip.length = 0.01, 
+                     hide.ns = TRUE, 
+                     size = 3.5) 
+
+filename <- paste0("plots/Animals/TT_within.png")
+plot_tt2_final
+suppressMessages(ggsave(filename = filename, width = 2400, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+ rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+ invisible(gc())
+
+```
+
+
+# BW 
+
+## Prepare data 
+```{r Prepare_BW, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Remove samples with incomplete metadata (i.e., remove days where transit time was not measured)
+dat_BW <- metadat[metadat$Day %in% c('D02','D05','D08','D10'),] 
+dat_BW$Day 
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat_BW <- dat_BW %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D02", "D05", "D08", "D10")) %>% mutate_at("Animal", factor) 
+
+# Make sure that data is in correct order (for paired analysis)
+dat_BW <- dat_BW[order(dat_BW$Day),]
+
+dat_BW_con <- dat_BW[dat_BW$Group %in% c('Control'),] 
+dat_BW_low <- dat_BW[dat_BW$Group %in% c('Low'),] 
+dat_BW_med <- dat_BW[dat_BW$Group %in% c('Medium'),] 
+dat_BW_high <- dat_BW[dat_BW$Group %in% c('High'),] 
+
+```
+
+## Visualization + summary statistics 
+```{r Visualize_BW, eval = TRUE}
+
+# Get summary statistics 
+dat_BW %>% 
+  group_by(Group, Day) %>% 
+  get_summary_stats(BW, type = "common")
+
+# Set colors 
+my_cols_con <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low <- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_med <- c("darkseagreen2", "#66CC66", "#339933", "#006600")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+# Visualise data 
+plot_con <- dat_BW_con %>%
+  ggboxplot(x = "Day",
+           y = "BW",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#ff6666") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(18, 23), breaks = scales::pretty_breaks(n=4))+
+  ylab("Body weight (g)")+
+  theme_classic()+
+  ggtitle("Control")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_con)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_BW_low %>%
+  ggboxplot(x = "Day",
+           y = "BW",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#3366CC") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(18, 23), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_med <- dat_BW_med %>%
+  ggboxplot(x = "Day",
+           y = "BW",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#66CC66") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(18, 23), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Medium dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_med)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_BW_high %>%
+  ggboxplot(x = "Day",
+           y = "BW",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#c994c7") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(18, 23), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+```
+
+## Check assumptions 
+```{r assumptions_BW, eval = TRUE}
+
+# Shapiro tests 
+dat_BW %>%
+  group_by(Group)%>%
+  shapiro_test(BW)
+
+# QQ plots
+dat_BW %>%
+  ggqqplot("BW") + facet_grid("Group")
+
+
+# Levene's test (test for homogeneity)
+dat_BW %>% 
+  levene_test(BW~Group*Day)
+
+```
+
+## Statistical testing 
+```{r stat_BW, eval = TRUE}
+
+# Friedman for paired data 
+friedman.test.within <- friedman.test(BW ~ Day|Animal, data = dat_BW)
+friedman.test.within
+
+
+# Within group comparison: Paired Wilcoxon  
+stat.test.con <- dat_BW_con %>%
+  wilcox_test(as.formula(paste("BW ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.low <- dat_BW_low %>%
+  wilcox_test(as.formula(paste("BW ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.med <- dat_BW_med %>%
+  wilcox_test(as.formula(paste("BW ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.high <- dat_BW_high %>%
+  wilcox_test(as.formula(paste("BW ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) # For setting the text sizes in the plot 
+
+plot_con_final <- plot_con + My_Theme + 
+  stat_pvalue_manual(stat.test.con, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE)
+
+plot_low_final <- plot_low + My_Theme + 
+  stat_pvalue_manual(stat.test.low, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_med_final <- plot_med + My_Theme + 
+  stat_pvalue_manual(stat.test.med, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_high_final <- plot_high + My_Theme +  
+  stat_pvalue_manual(stat.test.high, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_final <- ggarrange(plot_con_final, plot_low_final, plot_med_final, plot_high_final, ncol=4, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Body weight during the experiment", color = "black", face = "bold"))
+
+filename <- paste0("plots/Animals/BW_Within.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+
+
+# Food intake 
+
+## Prepare data 
+```{r prepare_food, eval = TRUE}
+
+# Load data 
+metadat <- read_csv("input/input_PRIMA06_animals.csv")
+
+# Find out where data on food intake is missing 
+metadat[!complete.cases(metadat[,"FoodIntake"]), ] 
+# All animals have missing values for day1 and two animals have missing values for day2 - but it is difficult to leave out day 2 when day1 and day2 are the only days before treatment. Therefore, I will instead remove the animals with missing values from the analysis 
+
+# Create the new dataset 
+dat_food <- metadat[metadat$Day %in% c('D02', 'D05','D08','D10'),] 
+dat_food <- dat_food[!dat_food$Animal %in% c('M11', 'M23'),]
+
+
+# Turn relevant variables into factors and make sure data is in correct order 
+dat_food <- dat_food %>% mutate_at("Group", factor, levels = c("Control", "Low", "Medium", "High")) %>% mutate_at("Day", factor, levels = c("D02", "D05", "D08", "D10")) %>% mutate_at("Animal", factor) 
+
+# Make sure that data is in correct order (for paired analysis)
+dat_food <- dat_food[order(dat_food$Day),]
+
+dat_food_con <- dat_food[dat_food$Group %in% c('Control'),] 
+dat_food_low <- dat_food[dat_food$Group %in% c('Low'),]
+dat_food_med <- dat_food[dat_food$Group %in% c('Medium'),]
+dat_food_high <- dat_food[dat_food$Group %in% c('High'),]
+
+```
+
+## Visualization + summary statistics 
+```{r visualize_food, eval = TRUE}
+
+
+# Get summary statistics 
+dat_food %>% 
+  group_by(Group, Day) %>% 
+  get_summary_stats(FoodIntake, type = "common")
+
+# Set colors 
+my_cols_con <- c("#fbb4ae", "#ff6666", "#CC3333", "#CC0000")
+my_cols_low <- c("#99CCFF","#6699CC", "#0066CC","#003399")
+my_cols_med <- c("darkseagreen2", "#66CC66", "#339933", "#006600")
+my_cols_high <- c("#e9dbf9", "#c994c7","#88419d", "#663366")
+
+# Visualise data 
+plot_con <- dat_food_con %>%
+  ggboxplot(x = "Day",
+           y = "FoodIntake",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#ff6666") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=4))+
+  ylab("Food intake (g)")+
+  theme_classic()+
+  ggtitle("Control")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank())+
+  scale_fill_manual(values = my_cols_con)+
+stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_low <- dat_food_low %>%
+  ggboxplot(x = "Day",
+           y = "FoodIntake",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#3366CC") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Low dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_low)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_med <- dat_food_med %>%
+  ggboxplot(x = "Day",
+           y = "FoodIntake",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#66CC66") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("Medium dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_med)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+plot_high <- dat_food_high %>%
+  ggboxplot(x = "Day",
+           y = "FoodIntake",
+           fill = "Day") + 
+  geom_line(aes(group = Animal), color = "#c994c7") + 
+  geom_point(size = 0.5, color = "black") +
+  scale_y_continuous(limits=c(0, 6), breaks = scales::pretty_breaks(n=4))+
+  ylab(NULL)+
+  theme_classic()+
+  ggtitle("High dose")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(legend.position="none")+ 
+  theme(axis.title.x=element_blank(), 
+        axis.line.y = element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank())+
+  scale_fill_manual(values = my_cols_high)+
+  stat_summary(fun = "mean", geom = "point", shape = 4, size = 2, position = position_dodge(.75))
+
+
+
+```
+
+## Check assumptions 
+```{r assumptions_food, eval = TRUE}
+
+# Shapiro tests 
+dat_food %>%
+  group_by(Group)%>%
+  shapiro_test(FoodIntake) # not normally distributed 
+
+# QQ plots
+dat_food %>%
+  ggqqplot("FoodIntake") + facet_grid("Group")
+
+
+# Levene's test (test for homogeneity)
+dat_food %>% 
+  levene_test(FoodIntake~Group*Day)
+
+```
+
+
+## Statistical testing 
+```{r stat_food, eval = TRUE}
+
+# Friedman for paired data 
+friedman.test.within <- friedman.test(FoodIntake ~ Day|Animal, data = dat_food)
+friedman.test.within
+
+# Within group comparison: Paired Wilcoxon  
+stat.test.con <- dat_food_con %>%
+  wilcox_test(as.formula(paste("FoodIntake ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.low <- dat_food_low %>%
+  wilcox_test(as.formula(paste("FoodIntake ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.med <- dat_food_med %>%
+  wilcox_test(as.formula(paste("FoodIntake ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+stat.test.high <- dat_food_high %>%
+  wilcox_test(as.formula(paste("FoodIntake ~", "Day", sep = " ")), paired = TRUE) %>%
+  adjust_pvalue(method = "fdr") %>%
+  add_significance("p.adj") %>% 
+  add_xy_position(x = "Day", dodge = 0.8) %>%
+  p_format("p.adj", accuracy = 0.0001, trailing.zero = TRUE, new.col = TRUE)
+
+
+# Create output plot
+My_Theme = theme(plot.title = element_text(size = 10)) # For setting the text sizes in the plot 
+
+plot_con_final <- plot_con + My_Theme + 
+  stat_pvalue_manual(stat.test.con, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE)
+
+plot_low_final <- plot_low + My_Theme + 
+  stat_pvalue_manual(stat.test.low, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_med_final <- plot_med + My_Theme + 
+  stat_pvalue_manual(stat.test.med, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_high_final <- plot_high + My_Theme +  
+  stat_pvalue_manual(stat.test.high, label = "p.adj.signif", tip.length = 0.01, size = 3.5, hide.ns = TRUE) 
+
+plot_final <- ggarrange(plot_con_final, plot_low_final, plot_med_final, plot_high_final, ncol=4, nrow=1)
+
+plot_final <- annotate_figure(plot_final, top = text_grob("Food intake during the experiment", color = "black", face = "bold"))
+
+filename <- paste0("plots/Animals/Food.png")
+plot_final
+suppressMessages(ggsave(filename = filename, width = 2000, height = 1400, units = "px", dpi = "print", device = "png", ))
+
+
+# Clear the environment and release memory
+rm(list = ls(all.names = TRUE)[ls(all.names = TRUE) != "params"])
+invisible(gc())
+
+```
+# INFO {.tabset .tabset-fade .tabset-pills}
+
+## FINAL COMMENT
+
+This completes the statistical analysis of animal data in PRIMA06 
+
+
+## SESSION INFO
+
+The analysis was run in the following environment:
+
+```{r packages, eval=TRUE}
+sessionInfo()
+```
+
+
